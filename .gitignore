@@ -1,0 +1,25 @@
+# Secrets and Credentials
+.env
+*.env
+serviceAccountKey.json
+secrets.h
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+env/
+venv/
+.venv/
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
