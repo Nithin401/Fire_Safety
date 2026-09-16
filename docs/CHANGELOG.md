@@ -30,3 +30,14 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Extended `ai/features.py` with multi-channel rolling statistics, thermal/gas derivatives, and sensor-fusion consistency checks (`flame_temp_correlation`, `fusion_confidence_score`, `false_alarm_suspect`).
   - Added unit tests in `tests/test_features.py` passing 100%.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M2 to **Completed**.
+
+## [2026-09-16] — Milestone M3: Real-Time Data Collection & Data Processing
+- **Dataset Schema v2.0**:
+  - Finalized official multi-sensor schema in `docs/dataset_schema.md` covering all 13 core and metadata fields.
+- **Validation Engine**:
+  - Implemented `ai/data_validation.py` with strict schema, range, monotonic timestamp, and categorical checks.
+- **Processed Dataset Pipeline**:
+  - Built `ai/build_processed_dataset.py` compiling raw inputs into versioned master datasets (`data/processed/v1/dataset.parquet` and `.csv`).
+  - Created `docs/data_summary_template.md` and automated generation of `data/processed/v1/data_summary.md` (4,800 rows across 40 sessions, 0 schema violations).
+  - Added unit tests in `tests/test_data_pipeline.py` passing 100%.
+  - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M3 to **Completed**.
