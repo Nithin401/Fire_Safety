@@ -41,3 +41,13 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Created `docs/data_summary_template.md` and automated generation of `data/processed/v1/data_summary.md` (4,800 rows across 40 sessions, 0 schema violations).
   - Added unit tests in `tests/test_data_pipeline.py` passing 100%.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M3 to **Completed**.
+
+## [2026-09-16] — Milestone M4: Feature Engineering & Baseline Analysis
+- **Dynamic Baseline Specification**:
+  - Published `docs/baseline_definition.md` formalizing rolling median ($W=50$), local standard deviation, Z-score thresholds, and time-since-last-anomaly.
+- **Feature Generation Pipeline**:
+  - Built `ai/build_features.py` processing session time-series with zero intra-session leakage to generate `data/features/v1/features.parquet` (4,800 rows x 48 engineered features).
+- **Engineering Visualizations**:
+  - Updated `ai/visualize.py` and exported multi-panel engineering report to `docs/reports/baseline_analysis.png`.
+  - Added unit tests in `tests/test_feature_pipeline.py` passing 100%.
+  - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M4 to **Completed**.
