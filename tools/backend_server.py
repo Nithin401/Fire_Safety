@@ -78,13 +78,21 @@ def receive_telemetry():
         flame_raw = int(payload.get("flame_raw", 800))
         fire_angle = int(payload.get("fire_angle", 90))
         is_fire_sensor = payload.get("is_fire", False)
+        temp_c = float(payload.get("temp_c", payload.get("tempC", 25.0)))
+        humidity = float(payload.get("humidity", 55.0))
+        gas_raw = int(payload.get("gas_raw", payload.get("gasRaw", 120)))
+        smoke_raw = int(payload.get("smoke_raw", payload.get("smokeRaw", 120)))
         
         timestamp_str = datetime.datetime.now().isoformat()
         
         # Keep history buffer for AI analysis
         reading_history.append({
             "pc_timestamp": timestamp_str,
-            "flame_raw": flame_raw
+            "flame_raw": flame_raw,
+            "temp_c": temp_c,
+            "humidity": humidity,
+            "gas_raw": gas_raw,
+            "smoke_raw": smoke_raw
         })
         if len(reading_history) > 100:
             reading_history.pop(0)
@@ -123,6 +131,10 @@ def receive_telemetry():
             "lastSync": timestamp_str,
             "flameRaw": flame_raw,
             "fireAngle": fire_angle,
+            "tempC": temp_c,
+            "humidity": humidity,
+            "gasRaw": gas_raw,
+            "smokeRaw": smoke_raw,
             "riskScore": float(risk_score),
             "fireState": fire_state,
             "responseStatus": response_status
@@ -138,6 +150,10 @@ def receive_telemetry():
                 db.collection("devices").document(device_id).collection("readings").add({
                     "flameRaw": flame_raw,
                     "fireAngle": fire_angle,
+                    "tempC": temp_c,
+                    "humidity": humidity,
+                    "gasRaw": gas_raw,
+                    "smokeRaw": smoke_raw,
                     "riskScore": risk_score,
                     "fireState": fire_state,
                     "timestamp": firestore.SERVER_TIMESTAMP

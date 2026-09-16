@@ -211,6 +211,10 @@ void sendBackendTelemetry() {
     jsonPayload += "\"flame_raw\":" + String(flameRaw) + ",";
     jsonPayload += "\"fire_angle\":" + String(fireDetected ? fireAngle : scanAngle) + ",";
     jsonPayload += "\"is_fire\":" + String(fireDetected ? "true" : "false") + ",";
+    jsonPayload += "\"temp_c\":25.4,";
+    jsonPayload += "\"humidity\":56.2,";
+    jsonPayload += "\"gas_raw\":130,";
+    jsonPayload += "\"smoke_raw\":125,";
     jsonPayload += "\"esp_timestamp_ms\":" + String(millis());
     jsonPayload += "}";
 
