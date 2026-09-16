@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FireShield AI — Ops Fleet Monitoring Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+        .badge-safe { background-color: #10b981; }
+        .badge-warning { background-color: #f59e0b; color: #000; }
+        .badge-high_risk { background-color: #f97316; }
+        .badge-fire { background-color: #ef4444; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .gauge-bar { height: 12px; border-radius: 6px; background-color: #334155; overflow: hidden; }
+        .gauge-fill { height: 100%; transition: width 0.5s ease; }
+        .metric-val { font-size: 1.6rem; font-weight: 700; }
+        .radar-compass { width: 100px; height: 100px; border-radius: 50%; border: 2px dashed #64748b; position: relative; margin: 0 auto; }
+        .radar-needle { width: 4px; height: 46px; background-color: #ef4444; position: absolute; bottom: 50px; left: 48px; transform-origin: bottom center; transition: transform 0.4s ease; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom border-secondary">
+            <div>
+                <h2 class="fw-bold mb-0 text-white">🛡️ FIRESHIELD AI <span class="badge bg-primary fs-6">OPS FLEET MONITOR</span></h2>
+                <small class="text-secondary">Decoupled Edge / Cloud Real-time Fleet Telemetry & Hybrid ML Inference</small>
+            </div>
+            <div>
+                <span id="backend-status" class="badge bg-secondary p-2">Connecting...</span>
+                <button class="btn btn-sm btn-outline-info ms-2" onclick="fetchData()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <!-- Quick Demo Ingestion Controls -->
+        <div class="card p-3 mb-4">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span class="fw-semibold text-light">Simulate Sensor Event (Demo Injector):</span>
+                <div>
+                    <button class="btn btn-sm btn-outline-success me-2" onclick="injectTelemetry('NORMAL')">Simulate NORMAL</button>
+                    <button class="btn btn-sm btn-outline-warning me-2" onclick="injectTelemetry('FALSE_ALARM')">Simulate FALSE ALARM (Optical Spike)</button>
+                    <button class="btn btn-sm btn-danger me-2" onclick="injectTelemetry('FIRE')">🔥 Simulate FIRE EVENT</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fleet Grid -->
+        <div class="row g-4" id="device-container">
+            <!-- Dynamic Device Cards injected here -->
+        </div>
+
+        <!-- Alert Feed -->
+        <div class="card p-4 mt-4">
+            <h5 class="fw-bold text-white mb-3">🚨 Real-time Emergency Alert Feed & Audit Log</h5>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0">
+                    <thead>
+                        <tr class="text-secondary">
+                            <th>Timestamp</th>
+                            <th>Severity</th>
+                            <th>Device / Room</th>
+                            <th>Message</th>
+                            <th>Angle</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alert-rows">
+                        <tr><td colspan="6" class="text-center text-muted">No active alerts</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = "http://localhost:5000";
+        const API_KEY = "fireshield_local_dev_key_2026";
+
+        async function fetchData() {
+            try {
+                const hRes = await fetch(`${BACKEND_URL}/health`);
+                if (hRes.ok) {
+                    const hData = await hRes.json();
+                    document.getElementById('backend-status').className = 'badge bg-success p-2';
+                    document.getElementById('backend-status').innerText = `ONLINE | ML Engine: ${hData.ml_model_active ? 'Active' : 'Offline'}`;
+                }
+            } catch (e) {
+                document.getElementById('backend-status').className = 'badge bg-danger p-2';
+                document.getElementById('backend-status').innerText = 'BACKEND OFFLINE';
+            }
+
+            try {
+                const dRes = await fetch(`${BACKEND_URL}/api/devices`);
+                const devices = await dRes.json();
+                renderDevices(devices);
+            } catch (e) { console.error(e); }
+
+            try {
+                const aRes = await fetch(`${BACKEND_URL}/api/alerts`);
+                const alerts = await aRes.json();
+                renderAlerts(alerts);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderDevices(devices) {
+            const container = document.getElementById('device-container');
+            container.innerHTML = '';
+            devices.forEach(dev => {
+                const state = dev.fireState || 'SAFE';
+                const badgeClass = `badge-${state.toLowerCase()}`;
+                const risk = dev.riskScore || 0;
+                const riskColor = risk > 80 ? '#ef4444' : (risk > 50 ? '#f59e0b' : '#10b981');
+                const angle = dev.fireAngle || 90;
+                
+                const card = document.createElement('div');
+                card.className = 'col-md-6 col-lg-4';
+                card.innerHTML = `
+                    <div class="card p-4 h-100 shadow">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-0">${dev.name || dev.id}</h5>
+                                <small class="text-secondary">Room: ${dev.room} | ID: ${dev.id}</small>
+                            </div>
+                            <span class="badge ${badgeClass} fs-6 px-3 py-2">${state}</span>
+                        </div>
+                        
+                        <div class="row g-3 text-center my-2">
+                            <div class="col-4">
+                                <div class="text-secondary small">Temp</div>
+                                <div class="metric-val text-warning">${(dev.tempC || 24.5).toFixed(1)}°C</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-secondary small">Flame ADC</div>
+                                <div class="metric-val text-danger">${dev.flameRaw || 850}</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-secondary small">Gas ADC</div>
+                                <div class="metric-val text-success">${dev.gasRaw || 120}</div>
+                            </div>
+                        </div>
+
+                        <div class="my-3">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-secondary">AI Risk Score</span>
+                                <span class="fw-bold" style="color: ${riskColor}">${risk.toFixed(1)}%</span>
+                            </div>
+                            <div class="gauge-bar">
+                                <div class="gauge-fill" style="width: ${risk}%; background-color: ${riskColor}"></div>
+                            </div>
+                        </div>
+
+                        <div class="row align-items-center my-2">
+                            <div class="col-6 text-center">
+                                <div class="radar-compass">
+                                    <div class="radar-needle" style="transform: rotate(${angle - 90}deg)"></div>
+                                </div>
+                                <small class="text-secondary d-block mt-1">Aim Angle: ${angle}°</small>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-secondary d-block">Suppression Pump:</small>
+                                <span class="badge ${dev.responseStatus === 'ACTIVE' ? 'bg-danger' : 'bg-secondary'}">${dev.responseStatus || 'IDLE'}</span>
+                                <small class="text-secondary d-block mt-2">ML Advisory:</small>
+                                <span class="badge bg-dark border border-secondary">${dev.aiMetadata?.mlPrediction || 'NORMAL'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderAlerts(alerts) {
+            const tbody = document.getElementById('alert-rows');
+            if (!alerts || alerts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No active alerts</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            alerts.slice(0, 10).forEach(a => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${new Date(a.timestamp).toLocaleTimeString()}</td>
+                    <td><span class="badge ${a.severity === 'critical' ? 'bg-danger' : 'bg-info'}">${a.severity}</span></td>
+                    <td>${a.roomId || a.deviceId}</td>
+                    <td>${a.message || a.title}</td>
+                    <td>${a.fireAngle ? a.fireAngle + '°' : 'N/A'}</td>
+                    <td>${a.acknowledged ? '<span class="text-success small">✓ Acknowledged</span>' : `<button class="btn btn-xs btn-outline-light" onclick="ackAlert('${a.id}')">Ack</button>`}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function ackAlert(id) {
+            await fetch(`${BACKEND_URL}/api/alerts/${id}/ack`, { method: 'POST' });
+            fetchData();
+        }
+
+        async function injectTelemetry(type) {
+            let payload = {
+                device_id: "dev_001",
+                room_id: "Kitchen",
+                flame_raw: 900,
+                temp_c: 24.5,
+                humidity: 55.0,
+                gas_raw: 120,
+                smoke_raw: 115,
+                fire_angle: 90,
+                is_fire: false
+            };
+            if (type === 'FIRE') {
+                payload.flame_raw = 160;
+                payload.temp_c = 68.0;
+                payload.gas_raw = 620;
+                payload.fire_angle = 45;
+                payload.is_fire = true;
+            } else if (type === 'FALSE_ALARM') {
+                payload.flame_raw = 320; // sudden optical drop
+                payload.temp_c = 24.8;   // but cold ambient temp!
+                payload.gas_raw = 125;   // and clean air!
+                payload.fire_angle = 120;
+            }
+            await fetch(`${BACKEND_URL}/api/telemetry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+                body: JSON.stringify(payload)
+            });
+            setTimeout(fetchData, 400);
+        }
+
+        setInterval(fetchData, 2000);
+        fetchData();
+    </script>
+</body>
+</html>

@@ -77,3 +77,19 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Built `tests/test_direction_detection.py` simulating optical flame distributions and comms dropouts, passing 100%.
   - Published `docs/direction_detection_report.md`.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M6 to **Completed**.
+
+## [2026-09-16] — Milestone M7: Mobile Application & Alert Integration
+- **Hardened Backend Server**:
+  - Implemented API key & Bearer token authentication on `/api/telemetry`.
+  - Integrated `HybridRiskEngine` live into ingestion pipeline with deterministic safety backstop.
+  - Built rate-limited alert dispatcher (transitions & 60s reminder) with server-side Telegram & FCM push.
+  - Implemented alert audit trail and ack endpoints (`/api/alerts`, `/api/alerts/<id>/ack`).
+  - Added `Dockerfile` and `docker-compose.yml` containerization.
+- **Web Ops Fleet Dashboard**:
+  - Built internal fleet monitor `tools/ops_dashboard/index.html` with live status cards, telemetry gauges, directional radar compasses, and one-click demo injection.
+- **Mobile Application Integration (`D:\FireShieldAI`)**:
+  - Updated `DeviceModel` with full multi-sensor fields (`tempC`, `humidity`, `gasRaw`, `flameRaw`, `fireAngle`).
+  - Added Radial Aim Direction Radar Compass and multi-sensor telemetry rows to `DeviceDetailsScreen`.
+  - Verified Flutter codebase with `flutter analyze` passing with 0 errors.
+  - Published `docs/deployment.md`.
+  - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M7 to **Completed**.
