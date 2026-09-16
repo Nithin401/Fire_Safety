@@ -67,3 +67,13 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Built `ai/risk_engine_ml.py` implementing the Hybrid Risk Engine blending ML prediction with the deterministic rule-based safety backstop.
   - Added unit tests in `tests/test_risk_engine_ml.py` passing 100%.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M5 to **Completed**.
+
+## [2026-09-16] — Milestone M6: Intelligent Direction Detection & Response
+- **Directional Sweep & Peak Tracking Engine**:
+  - Authored pure C++ scanner library `firmware/include/direction_engine.h` supporting 10-degree binning and prominence-based **Direction Confidence Scoring**.
+- **Servo Mapping & Failsafe**:
+  - Implemented calibration offset, min/max angle protection (5°–175°), and inverted mounting logic in `firmware/include/response_logic.h`.
+- **Simulation Test Harness**:
+  - Built `tests/test_direction_detection.py` simulating optical flame distributions and comms dropouts, passing 100%.
+  - Published `docs/direction_detection_report.md`.
+  - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M6 to **Completed**.
