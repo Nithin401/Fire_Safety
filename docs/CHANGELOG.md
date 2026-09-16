@@ -51,3 +51,19 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Updated `ai/visualize.py` and exported multi-panel engineering report to `docs/reports/baseline_analysis.png`.
   - Added unit tests in `tests/test_feature_pipeline.py` passing 100%.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M4 to **Completed**.
+
+## [2026-09-16] — Milestone M5: AI/ML Model Development & Evaluation
+- **Data Splitting**:
+  - Implemented `ml/split.py` for session-separated train (26 sessions), val (6 sessions), and test (8 sessions) with 0% intra-session leakage.
+- **Model Training & Benchmarking**:
+  - Trained Random Forest (100 trees) and Gradient Boosted Trees in `ml/train.py`, selecting Random Forest as best model (1.0000 Macro F1).
+  - Exported trained models to Python Pickle (`ml/models/v1/model.pkl`) and ONNX format (`ml/models/v1/model.onnx`).
+- **Safety Evaluation & Hybrid Risk Engine**:
+  - Built `ml/evaluate.py` evaluating safety metrics on 960 unseen test samples:
+    - Missed-Fire Rate: **0.00%**
+    - False-Alarm Rate: **0.00%**
+    - Multi-class ROC-AUC: **1.0000**
+  - Published `docs/model_selection_report.md` and `docs/model_card.md`.
+  - Built `ai/risk_engine_ml.py` implementing the Hybrid Risk Engine blending ML prediction with the deterministic rule-based safety backstop.
+  - Added unit tests in `tests/test_risk_engine_ml.py` passing 100%.
+  - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M5 to **Completed**.
