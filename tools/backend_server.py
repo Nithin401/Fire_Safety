@@ -86,7 +86,21 @@ in_memory_devices = {
 }
 
 reading_history = {} # device_id -> list of readings
-alert_audit_trail = [] # list of alert events
+alert_audit_trail = [
+    {
+        "id": "alt_sys_init",
+        "deviceId": "dev_001",
+        "roomId": "Kitchen",
+        "severity": "info",
+        "title": "FireShield AI Engine Online",
+        "message": "Hybrid Risk Engine & Multi-Sensor telemetry active. Scanning zone.",
+        "fireState": "SAFE",
+        "riskScore": 10.0,
+        "fireAngle": 90,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "acknowledged": True
+    }
+] # list of alert events
 device_alert_state = {} # device_id -> {'last_state': str, 'last_alert_time': float}
 
 # Initialize Hybrid Risk Engine (loads trained ML model with deterministic backstop)
