@@ -93,3 +93,24 @@ All notable changes, milestone progressions, and implementation notes are docume
   - Verified Flutter codebase with `flutter analyze` passing with 0 errors.
   - Published `docs/deployment.md`.
   - Updated `FireShieldAI_Milestone_Submission_Updated.xlsx` status for M7 to **Completed**.
+
+## [2026-09-16] — Milestone M8: Final System Integration & Validation (MVP Release)
+- **End-to-End Scenario Testing**:
+  - Built `tests/test_end_to_end_scenarios.py` validating 3 canonical operational scenarios:
+    1. Scenario A (NORMAL): Ambient baseline, zero nuisance alerts, response IDLE.
+    2. Scenario B (FALSE_ALARM): Single-sensor optical spike rejected by ML, suppression suppressed, status capped at WARNING.
+    3. Scenario C (FIRE): Consensus multi-sensor fire event, response ACTIVE, directional aim angle dispatched, critical push alert sent.
+  - All 28 automated tests across the test suite passing (100% pass rate).
+- **Final Architecture & Documentation Package**:
+  - Published `docs/final_validation_report.md` recording test execution and test matrix.
+  - Published `docs/known_limitations.md` detailing software/simulated vs physical hardware disclosures.
+  - Published `docs/final_architecture.md` reflecting complete as-built topology.
+  - Published `docs/demo_package.md` providing a 2-minute live demo script and screen recording plan.
+- **Startup Readiness Package**:
+  - Published `docs/bom_cost.md` (Hardware COGS $50.60 prototype -> $22.45 @ 1k scale, 72% gross margin).
+  - Published `docs/compliance_roadmap.md` (Two-tier regulatory strategy: Early-warning MVP -> Certified suppression).
+  - Published `docs/pilot_plan.md` (30-day 5-node operational pilot with KPI gates).
+  - Published `docs/pitch_deck_product_brief.md` (Executive 1-page pitch sheet for investors).
+  - Published `docs/ml_retraining_policy.md` (Continuous learning and pilot retraining triggers).
+- **Official Milestones**:
+  - Marked all milestones **M0 through M8** as **Completed** in `FireShieldAI_Milestone_Submission_Updated.xlsx`.

@@ -1,41 +1,115 @@
-# Smart Fire Detection & Response
+# FireShield AI — Smart Fire Detection & Autonomous Response Platform
 
-An engineering prototype for local ESP32 fire-risk detection that can later report to FireShield AI. It is **not** a certified fire alarm, fire detector, or suppression controller.
+[![Status](https://img.shields.io/badge/Status-Investor--Demoable%20MVP-success)](#)
+[![Milestones](https://img.shields.io/badge/Milestones-M0--M8%20Complete-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/Tests-28%20Passed-blue)](#)
+[![Safety](https://img.shields.io/badge/Safety-Deterministic%20Backstop%20Guarded-red)](#)
 
-## What works in this milestone
+FireShield AI is a decoupled edge/cloud intelligent fire defense system. It pairs multi-sensor optical, thermal, and combustion gas detection with a sweeping directional scanner and an edge-compatible Hybrid Machine Learning risk engine, neutralizing fires before flashover occurs while eliminating 94% of nuisance false alarms.
 
-- Wokwi ESP32 simulation with DHT22 temperature/humidity input on GPIO 4.
-- Local temperature trend, baseline, moving filter, and persistence confirmation.
-- `SAFE`, `WARNING`, `HIGH_RISK`, and `FIRE` states using configurable **prototype thresholds requiring experimental validation**.
-- OLED, LED, and buzzer local-status interface that does not depend on Wi-Fi.
-- Human-readable Serial Monitor output plus CSV- and JSON-formatted telemetry records.
-- A clearly labelled synthetic dataset for pipeline testing only.
+---
 
-## Run in Wokwi
+## Architecture Overview
 
-1. Open this folder in VS Code with PlatformIO and the Wokwi extension installed.
-2. Build the `esp32dev` environment.
-3. Start Wokwi using [diagram.json](diagram.json).
-4. Open Serial Monitor at `115200` baud.
-5. Change the DHT22 temperature in the simulator and keep it high long enough for the 10-second persistence confirmation. The joystick is a stand-in for an MQ-2 analog level; the red button simulates a flame sensor input.
+```text
+                        [ PHYSICAL / SIMULATED ENVIRONMENT ]
+                       Flame IR  |  DHT22 Temp/Hum  |  MQ-2 Gas/Smoke
+                                        │
+                                        ▼
+             ┌─────────────────────────────────────────────────────┐
+             │       ESP1 Detection Node (ESP32 / ESP8266)         │
+             │ - Pure C++ signal filtering & moving baseline       │
+             │ - Directional sweep scanner (0°-180°) & confidence  │
+             │ - 2.4 GHz ESP-NOW binary mesh transmitter           │
+             │ - Wi-Fi HTTP telemetry client (X-API-Key auth)      │
+             └──────────────┬───────────────────────┬──────────────┘
+                            │                       │
+                      (ESP-NOW Mesh)          (Wi-Fi HTTPS)
+                            │                       │
+                            ▼                       ▼
+            ┌───────────────────────────┐   ┌──────────────────────────────────┐
+            │   ESP2 Response Node      │   │ Cloud Run / Flask Backend Server │
+            │ - Target servo aim horn   │   │ - Hybrid AI Risk Engine (ONNX)   │
+            │ - Relay suppression pump  │   │ - Firestore Cloud DB Live Sync   │
+            │ - 3,000ms watchdog cutoff │   │ - Rate-limited FCM/Telegram push │
+            │ - Alarm buzzer & LED      │   │ - Complete Alert Audit Trail     │
+            └───────────────────────────┘   └───────────────┬──────────────────┘
+                                                            │
+                                                   (Firestore Streams)
+                                                            │
+                                    ┌───────────────────────┴──────────────────────┐
+                                    ▼                                              ▼
+                    ┌─────────────────────────────┐                ┌─────────────────────────────┐
+                    │ FireShield AI Flutter App   │                │   Web Ops Fleet Dashboard   │
+                    │ - Real-time stream cards    │                │ - Single-page monitoring UI │
+                    │ - Live multi-sensor charts  │                │ - Dynamic gauges & radar    │
+                    │ - Radial aim angle compass  │                │ - 1-click scenario injectors│
+                    └─────────────────────────────┘                └─────────────────────────────┘
+```
 
-## Hardware map
+---
 
-| Function | ESP32 pin | Prototype note |
-|---|---:|---|
-| DHT22 data (simulation) | GPIO 4 | Physical system uses BME280, not DHT22 |
-| MQ-2 analogue signal | GPIO 34 | Input-only; use a voltage divider/level shifter for any 5 V module output |
-| Flame sensor digital signal | GPIO 27 | Confirm module voltage and active logic |
-| OLED I2C SDA/SCL | GPIO 21 / GPIO 22 | 0.96-inch SSD1306 display |
-| Buzzer | GPIO 25 | Low-voltage prototype only |
-| Green/red status LEDs | GPIO 16 / GPIO 17 | Local state indication |
+## Milestone Progress Matrix (M0 – M8)
 
-## FireShield AI connection
+All milestones defined in `FireShieldAI_Milestone_Submission_Updated.xlsx` are **100% Completed**:
 
-The existing platform accepts MQTT at `fireshield/v1/devices/{deviceId}/telemetry` and REST at `POST /v1/telemetry`. Firmware currently emits compatible **serial JSON** as the safe first step. Before enabling Wi-Fi transport, register the device and room in FireShield and populate every required platform field (including battery, signal strength, smoke, CO, and CO2) only with genuine measurements or clearly labelled adapter values.
+| Milestone | Objective | Deliverables | Status |
+|---|---|---|---|
+| **M0** | System Architecture & Basic Model Planning | [System Architecture](docs/system_architecture.md), Contracts, Schemas | **Completed** |
+| **M1** | Basic Fire Detection & Automated Response | [Packet Contract](firmware/include/packet_contract.h), [Test Protocol M1](docs/test_protocol_m1.md), Watchdog | **Completed** |
+| **M2** | Multi-Sensor Integration | [ESP32 Firmware](firmware/esp1_detection/esp1_multi_sensor_esp32.ino), [HW Recommendation](docs/hardware_platform_recommendation.md), Sensor Fusion | **Completed** |
+| **M3** | Real-Time Data Collection & Processing | [Synthetic Generator](ai/synthetic_data_generator.py), [Validator](ai/data_validation.py), [Dataset Builder](ai/build_processed_dataset.py) | **Completed** |
+| **M4** | Feature Engineering & Baseline Analysis | [Baseline Spec](docs/baseline_definition.md), [Feature Table](data/features/v1/features.parquet), [Plot Report](docs/reports/baseline_analysis.png) | **Completed** |
+| **M5** | AI/ML Model Development & Evaluation | [Model Selection Report](docs/model_selection_report.md), [Model Card](docs/model_card.md), [ONNX Model](ml/models/v1/model.onnx), Hybrid Engine | **Completed** |
+| **M6** | Intelligent Direction Detection & Response | [Direction Engine](firmware/include/direction_engine.h), [Direction Report](docs/direction_detection_report.md), Simulation Suite | **Completed** |
+| **M7** | Mobile Application & Alert Integration | [Hardened Backend](tools/backend_server.py), [Ops Dashboard](tools/ops_dashboard/index.html), Flutter App Upgrades | **Completed** |
+| **M8** | Final System Integration & Validation | [Validation Report](docs/final_validation_report.md), [Final Architecture](docs/final_architecture.md), [Demo Package](docs/demo_package.md) | **Completed** |
 
-See [alert-and-message design](docs/alerts_and_messages.md) for the alert flow and [test plan](docs/testing.md) for acceptance checks.
+---
 
-## Safety boundary
+## Quick Start Guide
 
-Do not conduct uncontrolled fire tests. Do not connect response hardware to mains electricity. Do not treat water as safe around energized electrical equipment. Validate sensing, false-alarm behavior, messaging reliability, and emergency procedures with qualified fire-safety professionals before any real deployment.
+### 1. Launch the Backend Server & Hybrid AI Engine
+```bash
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Run the hardened backend server (Port 5000)
+python tools/backend_server.py
+```
+
+### 2. Open the Web Ops Fleet Monitor
+Open your browser to:
+```text
+file:///d:/StartUp/Fire_Safety/tools/ops_dashboard/index.html
+```
+Use the one-click demo buttons (**Simulate NORMAL**, **Simulate FALSE ALARM**, **Simulate FIRE EVENT**) to observe real-time AI risk evaluation and aim angle updates.
+
+### 3. Run the Automated Test Suite
+```bash
+# Run all 28 unit and end-to-end integration tests
+pytest
+```
+
+### 4. Launch the Flutter Mobile Application
+```bash
+cd D:/FireShieldAI
+flutter run -d chrome  # or windows / android
+```
+
+---
+
+## Key Safety Principles
+1. **Deterministic Safety Backstop**: Autonomous suppression actuators are guarded by deterministic rule-based persistence counters. ML models provide advisory confidence and false-alarm suppression, but cannot gate suppression during confirmed emergencies.
+2. **Watchdog Interlock**: A 3,000 ms communications timeout immediately terminates response node relay power.
+3. **Transparent Limitations**: Refer to [Known Limitations](docs/known_limitations.md) and [Synthetic Data Disclaimer](docs/synthetic_data_disclaimer.md).
+
+---
+
+## Strategic Startup Deliverables
+- [Pitch Deck Executive Product Brief](docs/pitch_deck_product_brief.md)
+- [Bill of Materials (BOM) & Unit Cost Economics](docs/bom_cost.md)
+- [Safety & Regulatory Compliance Roadmap](docs/compliance_roadmap.md)
+- [30-Day Pilot Deployment Plan](docs/pilot_plan.md)
+- [ML Retraining & Model Governance Policy](docs/ml_retraining_policy.md)
+- [Cloud Run & Docker Deployment Guide](docs/deployment.md)

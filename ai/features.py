@@ -22,7 +22,13 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         'smoke_raw': 'smokeRaw',
         'fire_angle': 'fireAngle'
     }
-    return df.rename(columns=renames)
+    df_out = df.copy()
+    for old_col, new_col in renames.items():
+        if old_col in df_out.columns:
+            if new_col not in df_out.columns:
+                df_out[new_col] = df_out[old_col]
+            df_out = df_out.drop(columns=[old_col])
+    return df_out
 
 def extract_features(df: pd.DataFrame, window_size: int = 5) -> pd.DataFrame:
     """
