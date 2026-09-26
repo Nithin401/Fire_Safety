@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "author": "Fire Safety prototype",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-dht22", "id": "dht", "top": -110, "left": 220, "attrs": {} },
+    { "type": "wokwi-analog-joystick", "id": "gas_sim", "top": 140, "left": 220, "attrs": { "value": "0" } },
+    { "type": "wokwi-pushbutton", "id": "flame_sim", "top": 200, "left": 220, "attrs": { "color": "red" } },
+    { "type": "wokwi-ssd1306", "id": "oled", "top": -30, "left": -260, "attrs": { "i2cAddress": "0x3c" } },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": 180, "left": -200, "attrs": {} },
+    { "type": "wokwi-led", "id": "led_safe", "top": 230, "left": -80, "attrs": { "color": "green" } },
+    { "type": "wokwi-led", "id": "led_alert", "top": 230, "left": -20, "attrs": { "color": "red" } }
+  ],
+  "connections": [
+    [ "esp:3V3", "dht:VCC", "red", [ "v0" ] ], [ "esp:GND.1", "dht:GND", "black", [ "v0" ] ], [ "esp:4", "dht:SDA", "green", [ "v0" ] ],
+    [ "esp:3V3", "gas_sim:VCC", "red", [ "v0" ] ], [ "esp:GND.1", "gas_sim:GND", "black", [ "v0" ] ], [ "esp:34", "gas_sim:VERT", "orange", [ "v0" ] ],
+    [ "esp:3V3", "flame_sim:1.l", "red", [ "v0" ] ], [ "esp:27", "flame_sim:2.l", "purple", [ "v0" ] ], [ "esp:GND.1", "flame_sim:1.r", "black", [ "v0" ] ],
+    [ "esp:3V3", "oled:VCC", "red", [ "v0" ] ], [ "esp:GND.1", "oled:GND", "black", [ "v0" ] ], [ "esp:21", "oled:SDA", "blue", [ "v0" ] ], [ "esp:22", "oled:SCL", "yellow", [ "v0" ] ],
+    [ "esp:25", "buzzer:1", "purple", [ "v0" ] ], [ "esp:GND.1", "buzzer:2", "black", [ "v0" ] ],
+    [ "esp:16", "led_safe:A", "green", [ "v0" ] ], [ "esp:GND.1", "led_safe:C", "black", [ "v0" ] ], [ "esp:17", "led_alert:A", "red", [ "v0" ] ], [ "esp:GND.1", "led_alert:C", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
