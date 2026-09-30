@@ -1,6 +1,6 @@
 /* =====================================================================
    FIRESHIELD AI — SMART FIRE DETECTION & TELEMETRY SYSTEM
-   ALL-IN-ONE ESP1 HARDWARE FIRMWARE (ESP8266)
+   MASTER ESP1 HARDWARE FIRMWARE (ESP8266)
    =====================================================================
    Platform: ESP8266 (NodeMCU 1.0 / WeMos D1 Mini / ESP-12E)
    Architecture: Real-time Multi-Sensor Fusion + Firebase RTDB + ESP-NOW
@@ -45,7 +45,7 @@ extern "C" {
 }
 
 // =====================================================================
-// 1. CONFIGURATION (Edit your Wi-Fi name & password below)
+// 1. CONFIGURATION (Edit your credentials below)
 // =====================================================================
 
 // ---- Wi-Fi Configuration ----
@@ -56,15 +56,16 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";    // <-- Enter your Wi-Fi Pas
 #define DATABASE_URL  "smart-fire-detection-272bb-default-rtdb.asia-southeast1.firebasedatabase.app"
 #define API_KEY       "AIzaSyCxnGiInekI9FX6f7yUPuwxucYpHrUZWws"
 #define USER_EMAIL    "esp1@smartfiredetection.local"  // <-- Your Firebase Auth Email
-#define USER_PASSWORD "Esp1SecurePass123"             // <-- Your Firebase Auth Password
+#define USER_PASSWORD "YOUR_FIREBASE_AUTH_PASSWORD"   // <-- Set in Firebase Console -> Auth
 
 // ---- Optional Local Multi-Integration Server ----
 #define ENABLE_LOCAL_BACKEND_SERVER 0                 // Set to 1 to enable HTTP POST to local Python server
 #define BACKEND_SERVER_URL          "http://192.168.1.100:5000/api/v1/telemetry"
 #define BACKEND_API_KEY             "fireshield_local_dev_key_2026"
 
-// ---- Device & Experiment Metadata ----
+// ---- Device & Zone Metadata (Master Schema Specification) ----
 #define DEVICE_ID     "ESP1"
+#define ZONE_ID       "ZONE_1"                        // Room or physical zone identifier
 #define EXPERIMENT_ID "EXP001"                        // e.g., EXP001=Normal, EXP002=Fire, EXP003=Smoke
 
 // ---- Pin Mapping ----
@@ -80,7 +81,6 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";    // <-- Enter your Wi-Fi Pas
 #define ADS1115_GAIN          GAIN_ONE  // +/-4.096V range, 0.125 mV/bit
 
 // Voltage divider ratio: R1=10k, R2=15k -> ratio = 15/25 = 0.6
-// Set to 1.0f if sensors are powered at 3.3V without a divider.
 #define FLAME_DIVIDER_RATIO 0.6f
 #define GAS_DIVIDER_RATIO   0.6f
 
@@ -97,13 +97,13 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";    // <-- Enter your Wi-Fi Pas
 #define SAMPLE_BUFFER_SIZE 20             // Stores ~20s of backlog without starving ESP8266 RAM
 #define MQ2_WARMUP_MS     (60UL * 1000UL) // 60s heater warm-up period
 
-// Rule-based thresholds for prototype dataset labeling
+// Rule-based thresholds
 #define GAS_WARNING_RAW_THRESHOLD  12000
 #define GAS_PREFIRE_RAW_THRESHOLD  18000
 #define FLAME_ANALOG_THRESHOLD      8000  // Lower ADC indicates stronger IR flame radiation
 
 // =====================================================================
-// 2. DATA STRUCTURES & ENUMS
+// 2. DATA STRUCTURES & UNIFIED ESP-NOW CONTRACT
 // =====================================================================
 
 enum FireState : uint8_t {
@@ -138,16 +138,32 @@ struct SensorSample {
   FireState fireState;
   uint8_t flameDigital;
   uint8_t servoAngle;
+  float riskScore;
   bool sensorsValid;
 };
 
-// ESP-NOW Payload for ESP2 Extinguisher Actuator
-struct FireData {
-  uint8_t header;
-  uint8_t fire;
-  uint8_t angle;
-  uint32_t packetID;
+// Unified Packed ESP-NOW Payload for ESP2 Extinguisher Actuator
+#pragma pack(push, 1)
+struct FireDataPacket {
+  uint8_t  header;       // Magic byte: 0xAA
+  uint8_t  fire;         // 1 = fire active, 0 = clear
+  uint8_t  angle;        // 0-180 azimuth bearing
+  uint32_t packetID;     // Monotonic counter
+  uint8_t  fireState;    // 0=NORMAL, 1=WARNING, 2=PRE_FIRE, 3=FIRE, 4=CRITICAL
+  uint8_t  riskScore;    // Assessed risk score (0-100)
+  char     zoneId[8];    // Zone identifier e.g. "ZONE_1"
+  uint8_t  checksum;     // XOR checksum
 };
+#pragma pack(pop)
+
+inline uint8_t calculate_packet_checksum(const struct FireDataPacket* pkt) {
+  const uint8_t* bytes = (const uint8_t*)pkt;
+  uint8_t cs = 0;
+  for (size_t i = 0; i < sizeof(struct FireDataPacket) - 1; ++i) {
+    cs ^= bytes[i];
+  }
+  return cs;
+}
 
 // =====================================================================
 // 3. GLOBAL OBJECTS & STATE
@@ -165,6 +181,8 @@ unsigned long lastScanTime = 0;
 bool fireDetected = false;
 bool previousFire = false;
 int fireAngle = 90;
+FireState currentFireState = STATE_NORMAL;
+float currentRiskScore = 5.0f;
 
 unsigned long lastSendTime = 0;
 unsigned long lastWiFiAttempt = 0;
@@ -206,7 +224,7 @@ void startNtp() {
 
 bool getEpochIfSynced(uint32_t &epochOut) {
   time_t now = time(nullptr);
-  if (now < 1700000000) { // Timestamp before ~2023 means NTP not synced yet
+  if (now < 1700000000) {
     return false;
   }
   epochOut = (uint32_t)now;
@@ -257,7 +275,7 @@ void startWiFi() {
     startNtp();
   } else {
     wifiWasConnected = false;
-    Serial.println(F("Wi-Fi connection pending. Continuing autonomous fire detection..."));
+    Serial.println(F("Wi-Fi connection pending. Continuing autonomous local fire detection..."));
   }
 }
 
@@ -286,11 +304,16 @@ void checkWiFi() {
 }
 
 void sendFireData(bool fire, int angle) {
-  FireData packet;
+  FireDataPacket packet;
   packet.header = 0xAA;
   packet.fire = fire ? 1 : 0;
   packet.angle = constrain(angle, 0, 180);
   packet.packetID = ++packetID;
+  packet.fireState = (uint8_t)currentFireState;
+  packet.riskScore = (uint8_t)currentRiskScore;
+  strncpy(packet.zoneId, ZONE_ID, sizeof(packet.zoneId) - 1);
+  packet.zoneId[sizeof(packet.zoneId) - 1] = '\0';
+  packet.checksum = calculate_packet_checksum(&packet);
 
   esp_now_send(ESP2_MAC, (uint8_t*)&packet, sizeof(packet));
 }
@@ -325,7 +348,7 @@ void initFirebase() {
   fbAuth.user.email = USER_EMAIL;
   fbAuth.user.password = USER_PASSWORD;
 
-  fbConfig.timeout.serverResponse = 4000; // 4s timeout prevents loop stall
+  fbConfig.timeout.serverResponse = 4000;
   Firebase.begin(&fbConfig, &fbAuth);
   Firebase.reconnectWiFi(true);
   fbdo.setResponseSize(2048);
@@ -422,21 +445,28 @@ void collectSensorSample() {
   s.flameDigital = fireDetected ? 1 : 0;
   s.servoAngle   = (uint8_t)(fireDetected ? fireAngle : scanAngle);
 
-  // ---- Transparent Rule-Based Fire State Evaluation ----
+  // ---- Transparent Rule-Based Fire State & Risk Evaluation ----
   bool mq2WarmedUp = (millis() - systemStartMs > MQ2_WARMUP_MS);
 
   if (s.flameDigital == 1 && s.flameRaw < FLAME_ANALOG_THRESHOLD) {
     s.fireState = STATE_CRITICAL;
+    s.riskScore = 98.0f;
   } else if (s.flameDigital == 1) {
     s.fireState = STATE_FIRE;
+    s.riskScore = 90.0f;
   } else if (mq2WarmedUp && s.sensorsValid && s.gasRaw > GAS_PREFIRE_RAW_THRESHOLD) {
     s.fireState = STATE_PRE_FIRE;
+    s.riskScore = 65.0f;
   } else if (mq2WarmedUp && s.sensorsValid && s.gasRaw > GAS_WARNING_RAW_THRESHOLD) {
     s.fireState = STATE_WARNING;
+    s.riskScore = 35.0f;
   } else {
     s.fireState = STATE_NORMAL;
+    s.riskScore = 5.0f;
   }
 
+  currentFireState = s.fireState;
+  currentRiskScore = s.riskScore;
   lastLoggedFireState = s.fireState;
 
   // ---- Push into RAM Ring Buffer ----
@@ -452,7 +482,7 @@ void collectSensorSample() {
 }
 
 // =====================================================================
-// 9. FIREBASE & LOCAL SERVER UPLOAD
+// 9. FIREBASE & LOCAL SERVER UPLOAD (Master Schema Specification)
 // =====================================================================
 
 bool uploadOldestSample() {
@@ -465,23 +495,30 @@ bool uploadOldestSample() {
   bool haveIso = formatIsoTimestamp(s.epochTime, isoTime, sizeof(isoTime));
 
   FirebaseJson json;
-  if (haveIso) {
-    json.set("timestamp", isoTime);
-  } else {
-    json.set("timestamp", String(s.uptimeMs));
-  }
+  // Standardized 18-column Master Telemetry Contract
+  json.set("timestamp", haveIso ? isoTime : String(s.uptimeMs));
   json.set("device_id", DEVICE_ID);
+  json.set("zone_id", ZONE_ID);
   json.set("experiment_id", EXPERIMENT_ID);
+  json.set("temperature_c", s.temperature);
+  json.set("humidity_percent", s.humidity);
+  json.set("pressure_hpa", s.pressure);
+  json.set("flame_raw", s.flameRaw);
+  json.set("flame_voltage", s.flameVoltage);
+  json.set("flame_digital", s.flameDigital);
+  json.set("gas_raw", s.gasRaw);
+  json.set("gas_voltage", s.gasVoltage);
+  json.set("servo_angle", s.servoAngle);
+  json.set("fire_state", fireStateToStr(s.fireState));
+  json.set("risk_score", s.riskScore);
+  json.set("ml_prediction", "PENDING_INFERENCE");
+  json.set("ml_confidence", 0.0);
+  json.set("responder_status", fireDetected ? "ACTIVE" : "IDLE");
+
+  // Backward-compatibility aliases for legacy consumer screens
   json.set("temperature", s.temperature);
   json.set("humidity", s.humidity);
   json.set("pressure", s.pressure);
-  json.set("flame_raw", s.flameRaw);
-  json.set("flame_voltage", s.flameVoltage);
-  json.set("gas_raw", s.gasRaw);
-  json.set("gas_voltage", s.gasVoltage);
-  json.set("flame_digital", s.flameDigital);
-  json.set("fire_state", fireStateToStr(s.fireState));
-  json.set("servo_angle", s.servoAngle);
   json.set("sensors_valid", s.sensorsValid);
   json.set("uptime_ms", (double)s.uptimeMs);
 
@@ -500,6 +537,7 @@ bool uploadOldestSample() {
 
     String localJson = "{"
       "\"device_id\":\"" + String(DEVICE_ID) + "\","
+      "\"zone_id\":\"" + String(ZONE_ID) + "\","
       "\"flame_raw\":" + String(s.flameRaw) + ","
       "\"temp_c\":" + String(s.temperature, 2) + ","
       "\"humidity\":" + String(s.humidity, 2) + ","
@@ -527,7 +565,8 @@ void printSerialStatus(const SensorSample &s, bool uploaded, const String &error
   Serial.println(F("========================================"));
   Serial.println(F("SMART FIRE DETECTION"));
   Serial.println(F("========================================"));
-  Serial.print(F("Device      : ")); Serial.println(DEVICE_ID);
+  Serial.print(F("Device      : ")); Serial.print(DEVICE_ID);
+  Serial.print(F(" | Zone: ")); Serial.println(ZONE_ID);
   Serial.println();
   Serial.print(F("Temperature : ")); Serial.print(s.temperature, 2); Serial.println(F(" °C"));
   Serial.print(F("Humidity    : ")); Serial.print(s.humidity, 2); Serial.println(F(" %"));
@@ -540,10 +579,9 @@ void printSerialStatus(const SensorSample &s, bool uploaded, const String &error
   Serial.print(F("Gas Volt    : ")); Serial.print(s.gasVoltage, 3); Serial.println(F(" V"));
   Serial.println();
   Serial.print(F("Flame Digital : ")); Serial.println(s.flameDigital);
-  Serial.println();
-  Serial.print(F("Fire State  : ")); Serial.println(fireStateToStr(s.fireState));
-  Serial.println();
-  Serial.print(F("Servo Angle : ")); Serial.println(s.servoAngle);
+  Serial.print(F("Fire State    : ")); Serial.println(fireStateToStr(s.fireState));
+  Serial.print(F("Risk Score    : ")); Serial.println(s.riskScore, 1);
+  Serial.print(F("Servo Angle   : ")); Serial.println(s.servoAngle);
   Serial.println();
 
   if (uploaded) {
@@ -572,7 +610,7 @@ void setup() {
 
   Serial.println();
   Serial.println(F("========================================"));
-  Serial.println(F(" SMART FIRE DETECTION - ALL-IN-ONE"));
+  Serial.println(F(" SMART FIRE DETECTION - MASTER FIRMWARE"));
   Serial.println(F(" (Telegram completely removed)"));
   Serial.println(F("========================================"));
 
@@ -617,7 +655,7 @@ void setup() {
 void loop() {
   checkWiFi();
 
-  // Priority 1: High-Speed Fire Scanning & Actuation
+  // Priority 1: High-Speed Local Fire Scanning & Actuation
   if (!fireDetected) {
     scanForFire();
   }
