@@ -1,0 +1,40 @@
+{
+  "model_type": "RandomForest",
+  "target_mapping": {
+    "0": "NORMAL",
+    "1": "FIRE",
+    "2": "FALSE_ALARM"
+  },
+  "active_features": [
+    "temperature",
+    "room_baseline_temp",
+    "delta_temp_from_baseline",
+    "temp_rate_of_change_c_per_sec",
+    "temp_zscore",
+    "gas_raw",
+    "gas_voltage",
+    "room_baseline_gas",
+    "delta_gas_from_baseline",
+    "gas_rate_of_change_per_sec",
+    "gas_zscore",
+    "flame_raw",
+    "flame_voltage",
+    "flame_digital",
+    "humidity",
+    "pressure"
+  ],
+  "metrics": {
+    "weighted_f1": 1.0,
+    "test_accuracy": 1.0
+  },
+  "top_features": {
+    "gas_zscore": 0.1804903909874086,
+    "delta_gas_from_baseline": 0.17688491577867438,
+    "gas_raw": 0.12690412050459773,
+    "temp_zscore": 0.1086932615370876,
+    "delta_temp_from_baseline": 0.10050427808576086,
+    "gas_rate_of_change_per_sec": 0.07717120157312235,
+    "temp_rate_of_change_c_per_sec": 0.049238417380772476,
+    "humidity": 0.04904421366071109
+  }
+}
