@@ -28,6 +28,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ai.features import extract_features
 from ai.anomaly_detection import calculate_baseline, detect_anomalies_zscore
 from ai.risk_engine_ml import HybridRiskEngine
+from ai.dynamic_room_baseline import DynamicRoomBaselineEngine
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
@@ -111,6 +112,9 @@ hybrid_risk_engine = HybridRiskEngine(
     model_path=os.path.join(os.path.dirname(__file__), "..", "ml", "models", "v1", "model.pkl"),
     use_ml=True
 )
+
+# Initialize Dynamic Room Baseline Engine (tracks per-room ambient drift to prevent false alarms)
+dynamic_baseline_engine = DynamicRoomBaselineEngine(alpha_slow=0.01)
 
 # =====================================================
 # AUTHENTICATION DECORATOR
@@ -246,6 +250,7 @@ def health():
     })
 
 @app.route('/api/telemetry', methods=['POST'])
+@app.route('/api/v1/telemetry', methods=['POST'])
 @require_api_key
 def receive_telemetry():
     try:
@@ -295,6 +300,33 @@ def receive_telemetry():
         
         latest_features = df.iloc[-1].to_dict()
         risk_score, fire_state, meta = hybrid_risk_engine.evaluate_hybrid_risk(latest_features)
+
+        # Process reading through Dynamic Room Baseline Engine
+        reading_dict = {
+            "room_id": room_id,
+            "device_id": device_id,
+            "temperature": temp_c,
+            "humidity": humidity,
+            "gas_raw": gas_raw,
+            "smoke_raw": smoke_raw,
+            "flame_raw": flame_raw,
+            "flame_digital": 1 if is_fire_sensor else 0,
+            "timestamp": timestamp_str
+        }
+        baseline_result = dynamic_baseline_engine.process_reading(reading_dict)
+
+        # Adaptive False Alarm Suppression:
+        # If ambient temperature is high (e.g. sunny room), but baseline matches and flame/smoke are absent:
+        if baseline_result["ai_classification_verdict"] == "NORMAL_SUNNY_DAY":
+            fire_state = "SAFE"
+            risk_score = min(risk_score, 10.0)
+        elif baseline_result["ai_classification_verdict"].startswith("FALSE_ALARM"):
+            if fire_state != "FIRE":
+                fire_state = "SAFE"
+                risk_score = min(risk_score, 20.0)
+        elif baseline_result["is_actual_fire"]:
+            fire_state = "FIRE"
+            risk_score = max(risk_score, 95.0)
         
         # Hardware digital flame pin override (if physical sensor pulls low)
         if is_fire_sensor and fire_state in ["SAFE", "WARNING"]:
@@ -323,10 +355,16 @@ def receive_telemetry():
             "riskScore": float(risk_score),
             "fireState": fire_state,
             "responseStatus": response_status,
+            "roomBaselineTemp": baseline_result["room_baseline_temp"],
+            "deltaTemp": baseline_result["delta_temp_from_baseline"],
+            "tempRateOfChange": baseline_result["temp_rate_of_change_c_per_sec"],
+            "aiClassificationVerdict": baseline_result["ai_classification_verdict"],
+            "suppressionReason": baseline_result["suppression_reason"],
             "aiMetadata": {
                 "mlActive": meta.get("ml_active", False),
                 "mlPrediction": meta.get("ml_prediction"),
-                "fusionConfidence": float(latest_features.get("fusion_confidence_score", 0.0))
+                "fusionConfidence": float(latest_features.get("fusion_confidence_score", 0.0)),
+                "baselineCalibrated": baseline_result["baseline_calibrated"]
             }
         }
         
