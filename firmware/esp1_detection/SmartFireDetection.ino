@@ -1,34 +1,43 @@
 /* =====================================================================
-   SMART FIRE DETECTION - ESP1 FIRMWARE (REFINED)
+   FIRESHIELD AI — SMART FIRE DETECTION & TELEMETRY SYSTEM
+   ALL-IN-ONE ESP1 HARDWARE FIRMWARE (ESP8266)
    =====================================================================
-   Preserves: WiFi, Telegram bot, ESP-NOW, KY-026 digital flame scan,
-   servo scanning, fire alert / fire-cleared messages.
+   Platform: ESP8266 (NodeMCU 1.0 / WeMos D1 Mini / ESP-12E)
+   Architecture: Real-time Multi-Sensor Fusion + Firebase RTDB + ESP-NOW
+   
+   SENSORS & ACTUATORS:
+     - BME280 (I2C 0x76 or 0x77): Ambient Temperature, Humidity, Pressure
+     - ADS1115 (I2C 0x48):
+         * Channel A0: KY-026 Flame Sensor (Analog AO via voltage divider)
+         * Channel A1: MQ-2 Gas/Smoke Sensor (Analog AO via voltage divider)
+     - KY-026 DO (GPIO14 / D5): High-speed digital flame trigger
+     - SG90 Servo (GPIO12 / D6): 0° to 180° directional scanning & fire lock-on
+     - ESP-NOW: Fast peer-to-peer radio link to ESP2 Extinguisher Node
+     - Firebase Realtime Database: 1 Hz telemetry upload to /devices/ESP1/readings
+     - Multi-Integration Server: Optional dual-report to local Python AI Backend
 
-   Adds: BME280 + KY-026(AO) + MQ-2(AO) via ADS1115, millis()-based
-   1 Hz synchronized sampling, a small RAM ring buffer, and
-   non-blocking-as-possible upload to Firebase Realtime Database.
+   NOTE: TELEGRAM HAS BEEN COMPLETELY REMOVED.
+   All alerts, monitoring, notifications, and dataset exports are
+   handled natively by the FireShield AI Flutter App and Backend.
 
-   REQUIRED LIBRARIES (install via Arduino Library Manager):
-     - ESP8266 core for Arduino (board package)
-     - Servo (bundled with ESP8266 core)
-     - UniversalTelegramBot        by Brian Lough
-     - Adafruit Unified Sensor     by Adafruit
-     - Adafruit BME280 Library     by Adafruit
-     - Adafruit ADS1X15            by Adafruit
-     - Firebase ESP8266 Client     by Mobizt   (search "FirebaseESP8266")
-
+   REQUIRED ARDUINO LIBRARIES (Install via Arduino Library Manager):
+     - ESP8266 by ESP8266 Community (Boards Manager)
+     - Servo (Bundled with ESP8266 core)
+     - Adafruit Unified Sensor
+     - Adafruit BME280 Library
+     - Adafruit ADS1X15
+     - Firebase ESP8266 Client by Mobizt
    ===================================================================== */
 
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 #include <Servo.h>
-#include <WiFiClientSecure.h>
-#include <UniversalTelegramBot.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_ADS1X15.h>
 #include <FirebaseESP8266.h>
+#include <ESP8266HTTPClient.h>
 #include <time.h>
 
 extern "C" {
@@ -36,99 +45,120 @@ extern "C" {
 }
 
 // =====================================================================
-// SECTION 16: CONFIGURATION  (edit these)
+// 1. CONFIGURATION (Edit your Wi-Fi name & password below)
 // =====================================================================
 
-// ---- WiFi ----
-const char* WIFI_SSID     = "YOUR_WIFI_NAME";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+// ---- Wi-Fi Configuration ----
+const char* WIFI_SSID     = "YOUR_WIFI_NAME";        // <-- Enter your Wi-Fi SSID
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";    // <-- Enter your Wi-Fi Password
 
-// ---- Telegram ----
-#define BOT_TOKEN "YOUR_NEW_TELEGRAM_BOT_TOKEN"
-#define CHAT_ID   "YOUR_CHAT_ID"
+// ---- Firebase Realtime Database Configuration ----
+#define DATABASE_URL  "smart-fire-detection-272bb-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define API_KEY       "AIzaSyCxnGiInekI9FX6f7yUPuwxucYpHrUZWws"
+#define USER_EMAIL    "esp1@smartfiredetection.local"  // <-- Your Firebase Auth Email
+#define USER_PASSWORD "Esp1SecurePass123"             // <-- Your Firebase Auth Password
 
-// ---- Firebase Realtime Database ----
-// Host WITHOUT "https://" and WITHOUT trailing slash:
-#define FIREBASE_HOST          "smart-fire-detection-272bb-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define FIREBASE_API_KEY       "AIzaSyCxnGiInekI9FX6f7yUPuwxucYpHrUZWws"
-#define FIREBASE_USER_EMAIL    "esp1@fireshield.local"
-#define FIREBASE_USER_PASSWORD "Password123!"
+// ---- Optional Local Multi-Integration Server ----
+#define ENABLE_LOCAL_BACKEND_SERVER 0                 // Set to 1 to enable HTTP POST to local Python server
+#define BACKEND_SERVER_URL          "http://192.168.1.100:5000/api/v1/telemetry"
+#define BACKEND_API_KEY             "fireshield_local_dev_key_2026"
 
-// ---- Device / experiment identity ----
+// ---- Device & Experiment Metadata ----
 #define DEVICE_ID     "ESP1"
-#define EXPERIMENT_ID "EXP001"   // change per data-collection session, see SECTION 13
+#define EXPERIMENT_ID "EXP001"                        // e.g., EXP001=Normal, EXP002=Fire, EXP003=Smoke
 
-// ---- I2C pins (ADS1115 + BME280 share this bus) ----
-#define I2C_SDA_PIN 4   // D2 / GPIO4
-#define I2C_SCL_PIN 5   // D1 / GPIO5
+// ---- Pin Mapping ----
+#define I2C_SDA_PIN        4    // D2 / GPIO4 (Shared I2C bus for BME280 + ADS1115)
+#define I2C_SCL_PIN        5    // D1 / GPIO5
+#define FLAME_SENSOR_GPIO 14    // D5 / GPIO14 (KY-026 Digital Output)
+#define SCAN_SERVO_GPIO   12    // D6 / GPIO12 (Azimuth Scanning Servo)
 
-// ---- Existing digital / servo pins (unchanged) ----
-#define FLAME_SENSOR_GPIO 14   // D5 - KY-026 digital output
-#define SCAN_SERVO_GPIO   12   // D6
+// ---- ADS1115 Configuration ----
+#define ADS1115_I2C_ADDR      0x48
+#define ADS1115_CHANNEL_FLAME 0   // Channel A0 <- KY-026 Analog Output
+#define ADS1115_CHANNEL_GAS   1   // Channel A1 <- MQ-2 Analog Output
+#define ADS1115_GAIN          GAIN_ONE  // +/-4.096V range, 0.125 mV/bit
 
-// ---- ADS1115 ----
-#define ADS1115_I2C_ADDR 0x48
-#define ADS1115_CHANNEL_FLAME 0   // A0 <- KY-026 AO
-#define ADS1115_CHANNEL_GAS   1   // A1 <- MQ-2 AO
-// Gain: GAIN_ONE = +-4.096V range, 0.125 mV/bit. Chosen because both
-// sensors are 5V modules stepped down through a voltage divider (see
-// SECTION 8 explanation) to stay under ~3.3V - GAIN_ONE gives the best
-// resolution that still comfortably covers that divided range.
-#define ADS1115_GAIN GAIN_ONE
-
-// If you added a voltage divider on KY-026/MQ-2 AO before the ADS1115,
-// set the ratio here (Vads / Vsensor) so raw sensor voltage is restored.
-// Divider R1=10k (sensor->node), R2=15k (node->GND) -> ratio = 15/25 = 0.6
+// Voltage divider ratio: R1=10k, R2=15k -> ratio = 15/25 = 0.6
+// Set to 1.0f if sensors are powered at 3.3V without a divider.
 #define FLAME_DIVIDER_RATIO 0.6f
 #define GAS_DIVIDER_RATIO   0.6f
-// If your sensors are powered at 3.3V and wired DIRECTLY to the ADS1115
-// with no divider, set both ratios to 1.0f instead.
 
-// ---- Timing ----
-#define SENSOR_SAMPLE_INTERVAL   1000UL   // ms, ~1 Hz synchronized sample
-#define FIREBASE_UPLOAD_INTERVAL 1000UL   // ms, target upload cadence
-#define SCAN_INTERVAL   40
-#define SCAN_STEP        3
-#define SEND_INTERVAL          80UL
-#define TELEGRAM_INTERVAL   30000UL
-#define WIFI_RETRY_INTERVAL 10000UL
-#define NTP_RESYNC_INTERVAL (6UL * 3600UL * 1000UL) // resync every 6h
+// ---- Timing Cadence (millis-based, non-blocking) ----
+#define SENSOR_SAMPLE_INTERVAL   1000UL   // 1 Hz synchronized sampling
+#define FIREBASE_UPLOAD_INTERVAL 1000UL   // 1 Hz upload cadence
+#define SERVO_SCAN_INTERVAL        40UL   // Step interval during scanning sweep
+#define SERVO_SCAN_STEP             3     // Degrees per step
+#define ESPNOW_SEND_INTERVAL       80UL   // ESP-NOW packet interval
+#define WIFI_RETRY_INTERVAL     10000UL   // WiFi reconnection check interval
+#define NTP_RESYNC_INTERVAL (6UL * 3600UL * 1000UL) // Resync NTP every 6 hours
 
-// ---- Local buffer for Firebase samples ----
-// ESP8266 has ~80KB free heap; HTTPS/TLS to Firebase (BearSSL) alone can
-// use 20-30KB while a request is in flight. Keep this buffer small so a
-// WiFi outage never starves the heap. Each SensorSample is ~48 bytes,
-// so 20 slots is well under 1KB - safe with large margin.
-#define SAMPLE_BUFFER_SIZE 20
+// ---- Ring Buffer for Offline Network Resilience ----
+#define SAMPLE_BUFFER_SIZE 20             // Stores ~20s of backlog without starving ESP8266 RAM
+#define MQ2_WARMUP_MS     (60UL * 1000UL) // 60s heater warm-up period
 
-// ---- MQ-2 warm-up ----
-#define MQ2_WARMUP_MS (60UL * 1000UL)  // 60s heater warm-up before trusting gas readings
-
-// ---- Simple threshold used ONLY to label WARNING vs NORMAL in the
-// dataset for later human/ML review. This is NOT machine learning, and
-// it does NOT drive the flame-suppression response (the digital KY-026
-// signal still does that, unchanged). Tune after collecting baseline data.
-#define GAS_WARNING_RAW_THRESHOLD 12000
+// Rule-based thresholds for prototype dataset labeling
+#define GAS_WARNING_RAW_THRESHOLD  12000
+#define GAS_PREFIRE_RAW_THRESHOLD  18000
+#define FLAME_ANALOG_THRESHOLD      8000  // Lower ADC indicates stronger IR flame radiation
 
 // =====================================================================
-// GLOBALS - unchanged ESP-NOW / servo / telegram state
+// 2. DATA STRUCTURES & ENUMS
 // =====================================================================
 
-WiFiClientSecure client;
-UniversalTelegramBot bot(BOT_TOKEN, client);
+enum FireState : uint8_t {
+  STATE_NORMAL = 0,
+  STATE_WARNING,
+  STATE_PRE_FIRE,
+  STATE_FIRE,
+  STATE_CRITICAL
+};
 
-uint8_t ESP2_MAC[] = { 0x48, 0x3F, 0xDA, 0x5F, 0x0C, 0x55 };
+const char* fireStateToStr(FireState s) {
+  switch (s) {
+    case STATE_NORMAL:   return "NORMAL";
+    case STATE_WARNING:  return "WARNING";
+    case STATE_PRE_FIRE: return "PRE_FIRE";
+    case STATE_FIRE:     return "FIRE";
+    case STATE_CRITICAL: return "CRITICAL";
+  }
+  return "NORMAL";
+}
 
+struct SensorSample {
+  uint32_t epochTime;
+  unsigned long uptimeMs;
+  float temperature;
+  float humidity;
+  float pressure;
+  int16_t flameRaw;
+  float flameVoltage;
+  int16_t gasRaw;
+  float gasVoltage;
+  FireState fireState;
+  uint8_t flameDigital;
+  uint8_t servoAngle;
+  bool sensorsValid;
+};
+
+// ESP-NOW Payload for ESP2 Extinguisher Actuator
 struct FireData {
   uint8_t header;
   uint8_t fire;
   uint8_t angle;
   uint32_t packetID;
 };
+
+// =====================================================================
+// 3. GLOBAL OBJECTS & STATE
+// =====================================================================
+
+// ESP2 Receiver MAC Address (Adjust to match your ESP2 board MAC)
+uint8_t ESP2_MAC[] = { 0x48, 0x3F, 0xDA, 0x5F, 0x0C, 0x55 };
 uint32_t packetID = 0;
 
 Servo scanServo;
-int scanAngle = 0;
+int scanAngle = 90;
 int scanDirection = 1;
 unsigned long lastScanTime = 0;
 
@@ -137,13 +167,8 @@ bool previousFire = false;
 int fireAngle = 90;
 
 unsigned long lastSendTime = 0;
-unsigned long lastTelegramTime = 0;
 unsigned long lastWiFiAttempt = 0;
 bool wifiWasConnected = false;
-
-// =====================================================================
-// GLOBALS - new sensing / Firebase
-// =====================================================================
 
 Adafruit_BME280 bme;
 bool bmeOK = false;
@@ -163,54 +188,25 @@ bool ntpSynced = false;
 unsigned long lastSampleTime = 0;
 unsigned long lastUploadAttempt = 0;
 
-enum FireState : uint8_t { STATE_NORMAL = 0, STATE_WARNING, STATE_PRE_FIRE, STATE_FIRE, STATE_CRITICAL };
-
-const char* fireStateToStr(FireState s) {
-  switch (s) {
-    case STATE_NORMAL:   return "NORMAL";
-    case STATE_WARNING:  return "WARNING";
-    case STATE_PRE_FIRE: return "PRE_FIRE";
-    case STATE_FIRE:     return "FIRE";
-    case STATE_CRITICAL: return "CRITICAL";
-  }
-  return "UNKNOWN";
-}
-
-struct SensorSample {
-  uint32_t epochTime;      // unix seconds, 0 if NTP never synced
-  unsigned long uptimeMs;  // fallback / cross-check
-  float temperature;
-  float humidity;
-  float pressure;
-  int16_t flameRaw;
-  float flameVoltage;
-  int16_t gasRaw;
-  float gasVoltage;
-  FireState fireState;
-  uint8_t flameDigital;
-  uint8_t servoAngle;
-  bool sensorsValid;       // false if BME280/ADS1115 read failed this cycle
-};
-
 SensorSample sampleBuffer[SAMPLE_BUFFER_SIZE];
-uint8_t bufHead = 0;   // next write position
-uint8_t bufCount = 0;  // number of samples currently queued
+uint8_t bufHead = 0;
+uint8_t bufCount = 0;
 uint16_t droppedSamples = 0;
 
+FireState lastLoggedFireState = STATE_NORMAL;
+
 // =====================================================================
-// TIME HELPERS
+// 4. NTP TIME SYNCHRONIZATION
 // =====================================================================
 
 void startNtp() {
-  // UTC, no DST offsets - store everything as UTC, matching timestamp
-  // format used in the CSV examples (trailing "Z").
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   lastNtpSync = millis();
 }
 
 bool getEpochIfSynced(uint32_t &epochOut) {
   time_t now = time(nullptr);
-  if (now < 1700000000) { // sanity check: before ~2023 means not synced yet
+  if (now < 1700000000) { // Timestamp before ~2023 means NTP not synced yet
     return false;
   }
   epochOut = (uint32_t)now;
@@ -218,7 +214,6 @@ bool getEpochIfSynced(uint32_t &epochOut) {
   return true;
 }
 
-// Formats "YYYY-MM-DDTHH:MM:SSZ". Returns false (empty string) if not synced.
 bool formatIsoTimestamp(uint32_t epoch, char* out, size_t outLen) {
   if (epoch == 0) {
     snprintf(out, outLen, "");
@@ -231,21 +226,21 @@ bool formatIsoTimestamp(uint32_t epoch, char* out, size_t outLen) {
 }
 
 // =====================================================================
-// WIFI (unchanged logic, kept intact)
+// 5. WI-FI & ESP-NOW SETUP
 // =====================================================================
 
 void startWiFi() {
   Serial.println();
-  Serial.println("Starting WiFi...");
+  Serial.println(F("Starting Wi-Fi..."));
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  unsigned long startTime = millis();
-  Serial.print("Connecting");
-  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 5000) {
+  unsigned long start = millis();
+  Serial.print(F("Connecting to Wi-Fi"));
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 5000) {
     delay(100);
     Serial.print(".");
   }
@@ -253,24 +248,16 @@ void startWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiWasConnected = true;
-    Serial.println("================================");
-    Serial.println("WIFI CONNECTED");
-    Serial.println("================================");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("WiFi Channel: ");
-    Serial.println(WiFi.channel());
-    Serial.print("ESP1 MAC: ");
-    Serial.println(WiFi.macAddress());
-
-    client.setInsecure();
-    Serial.println("Telegram HTTPS READY");
-
+    Serial.println(F("========================================"));
+    Serial.println(F("WI-FI CONNECTED"));
+    Serial.println(F("========================================"));
+    Serial.print(F("IP Address : ")); Serial.println(WiFi.localIP());
+    Serial.print(F("Channel    : ")); Serial.println(WiFi.channel());
+    Serial.print(F("ESP1 MAC   : ")); Serial.println(WiFi.macAddress());
     startNtp();
   } else {
     wifiWasConnected = false;
-    Serial.println("WiFi connection timeout.");
-    Serial.println("Fire detection will continue.");
+    Serial.println(F("Wi-Fi connection pending. Continuing autonomous fire detection..."));
   }
 }
 
@@ -278,14 +265,10 @@ void checkWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiWasConnected) {
       wifiWasConnected = true;
-      Serial.println();
-      Serial.println("WiFi connected again!");
-      Serial.print("IP: ");
-      Serial.println(WiFi.localIP());
-      client.setInsecure();
+      Serial.println(F("\nWi-Fi reconnected successfully!"));
+      Serial.print(F("IP: ")); Serial.println(WiFi.localIP());
       startNtp();
     }
-    // periodic NTP resync
     if (millis() - lastNtpSync >= NTP_RESYNC_INTERVAL) {
       startNtp();
     }
@@ -293,20 +276,14 @@ void checkWiFi() {
   }
 
   wifiWasConnected = false;
-
   if (millis() - lastWiFiAttempt >= WIFI_RETRY_INTERVAL) {
     lastWiFiAttempt = millis();
-    Serial.println();
-    Serial.println("WiFi disconnected. Retrying WiFi...");
+    Serial.println(F("\nRetrying Wi-Fi connection in background..."));
     WiFi.disconnect();
     delay(50);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 }
-
-// =====================================================================
-// ESP-NOW (unchanged)
-// =====================================================================
 
 void sendFireData(bool fire, int angle) {
   FireData packet;
@@ -315,47 +292,75 @@ void sendFireData(bool fire, int angle) {
   packet.angle = constrain(angle, 0, 180);
   packet.packetID = ++packetID;
 
-  uint8_t result = esp_now_send(ESP2_MAC, (uint8_t*)&packet, sizeof(packet));
-  if (result != 0) {
-    Serial.print("ESP-NOW SEND ERROR: ");
-    Serial.println(result);
-  }
+  esp_now_send(ESP2_MAC, (uint8_t*)&packet, sizeof(packet));
 }
 
 // =====================================================================
-// FLAME SENSOR - digital (unchanged)
+// 6. SENSORS & FIREBASE INITIALIZATION
 // =====================================================================
 
-bool flameDetected() {
+void initSensors() {
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+
+  // Initialize BME280 (tries 0x76 then 0x77)
+  bmeOK = bme.begin(0x76, &Wire);
+  if (!bmeOK) {
+    bmeOK = bme.begin(0x77, &Wire);
+  }
+  Serial.println(bmeOK ? F("BME280  : OK (I2C)") : F("BME280  : NOT FOUND (Check wiring 0x76/0x77)"));
+
+  // Initialize ADS1115 16-bit ADC
+  adsOK = ads.begin(ADS1115_I2C_ADDR, &Wire);
+  if (adsOK) {
+    ads.setGain(ADS1115_GAIN);
+    Serial.println(F("ADS1115 : OK (I2C Address 0x48)"));
+  } else {
+    Serial.println(F("ADS1115 : NOT FOUND (Check ADDR pin to GND)"));
+  }
+}
+
+void initFirebase() {
+  fbConfig.host = DATABASE_URL;
+  fbConfig.api_key = API_KEY;
+  fbAuth.user.email = USER_EMAIL;
+  fbAuth.user.password = USER_PASSWORD;
+
+  fbConfig.timeout.serverResponse = 4000; // 4s timeout prevents loop stall
+  Firebase.begin(&fbConfig, &fbAuth);
+  Firebase.reconnectWiFi(true);
+  fbdo.setResponseSize(2048);
+
+  firebaseReady = true;
+  Serial.println(F("Firebase: Initialized with Authentication"));
+}
+
+// =====================================================================
+// 7. LOCAL FIRE DETECTION & SERVO SCANNING
+// =====================================================================
+
+bool flameDigitalDetected() {
   int lowCount = 0;
   for (int i = 0; i < 3; i++) {
     if (digitalRead(FLAME_SENSOR_GPIO) == LOW) lowCount++;
-    delayMicroseconds(300);
+    delayMicroseconds(250);
   }
   return (lowCount >= 2);
 }
 
-// =====================================================================
-// SERVO SCANNING (unchanged)
-// =====================================================================
-
 void scanForFire() {
-  if (millis() - lastScanTime < SCAN_INTERVAL) return;
+  if (millis() - lastScanTime < SERVO_SCAN_INTERVAL) return;
   lastScanTime = millis();
 
   scanServo.write(scanAngle);
-  delay(2);
 
-  bool flame = flameDetected();
+  bool flame = flameDigitalDetected();
   if (flame) {
     fireDetected = true;
     fireAngle = scanAngle;
-    Serial.print("FIRE DETECTED AT ANGLE: ");
-    Serial.println(fireAngle);
     return;
   }
 
-  scanAngle += scanDirection * SCAN_STEP;
+  scanAngle += scanDirection * SERVO_SCAN_STEP;
   if (scanAngle >= 180) {
     scanAngle = 180;
     scanDirection = -1;
@@ -366,97 +371,7 @@ void scanForFire() {
 }
 
 // =====================================================================
-// TELEGRAM (unchanged)
-// =====================================================================
-
-bool sendTelegramAlert() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Telegram NOT SENT: WiFi disconnected.");
-    return false;
-  }
-  Serial.println();
-  Serial.println("Sending Telegram FIRE ALERT...");
-
-  String message;
-  message += "FIRE ALERT!\n\n";
-  message += "Fire detected.\n";
-  message += "Direction: ";
-  message += String(fireAngle);
-  message += " degrees\n\n";
-  message += "Smart Fire Extinguisher activated.";
-
-  bool result = bot.sendMessage(CHAT_ID, message, "");
-  Serial.println(result ? "Telegram alert SENT successfully." : "Telegram alert FAILED.");
-  return result;
-}
-
-bool sendTelegramClear() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Telegram clear NOT SENT: WiFi disconnected.");
-    return false;
-  }
-  Serial.println();
-  Serial.println("Sending Telegram FIRE CLEARED...");
-  bool result = bot.sendMessage(CHAT_ID, "Fire cleared.\nSmart Fire Extinguisher stopped.", "");
-  Serial.println(result ? "Telegram clear message SENT." : "Telegram clear message FAILED.");
-  return result;
-}
-
-void testTelegram() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Telegram test skipped: WiFi not connected.");
-    return;
-  }
-  Serial.println();
-  Serial.println("Testing Telegram...");
-  bool result = bot.sendMessage(CHAT_ID, "Smart Fire Extinguisher ESP1 is ONLINE.", "");
-  Serial.println(result ? "Telegram TEST SUCCESS." : "Telegram TEST FAILED.");
-}
-
-// =====================================================================
-// SENSOR INIT
-// =====================================================================
-
-void initSensors() {
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-
-  bmeOK = bme.begin(0x76, &Wire);
-  if (!bmeOK) {
-    bmeOK = bme.begin(0x77, &Wire);
-  }
-  Serial.println(bmeOK ? "BME280: OK" : "BME280: NOT FOUND (check wiring/address)");
-
-  adsOK = ads.begin(ADS1115_I2C_ADDR, &Wire);
-  if (adsOK) {
-    ads.setGain(ADS1115_GAIN);
-    Serial.println("ADS1115: OK");
-  } else {
-    Serial.println("ADS1115: NOT FOUND (check wiring/address)");
-  }
-}
-
-// =====================================================================
-// FIREBASE INIT
-// =====================================================================
-
-void initFirebase() {
-  fbConfig.host = FIREBASE_HOST;
-  fbConfig.api_key = FIREBASE_API_KEY;
-  fbAuth.user.email = FIREBASE_USER_EMAIL;
-  fbAuth.user.password = FIREBASE_USER_PASSWORD;
-
-  fbConfig.timeout.serverResponse = 5000; // ms, don't let a stuck call hang forever
-
-  Firebase.begin(&fbConfig, &fbAuth);
-  Firebase.reconnectWiFi(true);
-  fbdo.setResponseSize(2048);
-
-  firebaseReady = true;
-  Serial.println("Firebase: initialized (auth/token handled in background)");
-}
-
-// =====================================================================
-// SENSOR SAMPLING - fills one SensorSample, pushes into ring buffer
+// 8. MULTI-SENSOR SAMPLING (1 Hz non-blocking)
 // =====================================================================
 
 void collectSensorSample() {
@@ -467,21 +382,16 @@ void collectSensorSample() {
   uint32_t epoch = 0;
   getEpochIfSynced(epoch);
   s.epochTime = epoch;
-
   s.sensorsValid = true;
 
-  // ---- BME280 ----
+  // ---- Read BME280 ----
   if (bmeOK) {
     float t = bme.readTemperature();
     float h = bme.readHumidity();
     float p = bme.readPressure() / 100.0F;
 
-    if (isnan(t) || isnan(h) || isnan(p)) {
+    if (isnan(t) || isnan(h) || isnan(p) || t < -40 || t > 85 || h < 0 || h > 100) {
       s.sensorsValid = false;
-      Serial.println("BME280 read error: NaN");
-    } else if (t < -40 || t > 85 || h < 0 || h > 100 || p < 300 || p > 1100) {
-      s.sensorsValid = false;
-      Serial.println("BME280 read error: out of range");
     } else {
       s.temperature = t;
       s.humidity = h;
@@ -491,14 +401,13 @@ void collectSensorSample() {
     s.sensorsValid = false;
   }
 
-  // ---- ADS1115: KY-026 analog + MQ-2 analog ----
+  // ---- Read ADS1115 (KY-026 AO & MQ-2 AO) ----
   if (adsOK) {
     int16_t rawFlame = ads.readADC_SingleEnded(ADS1115_CHANNEL_FLAME);
     int16_t rawGas   = ads.readADC_SingleEnded(ADS1115_CHANNEL_GAS);
 
     if (rawFlame < 0 || rawGas < 0 || rawFlame > 32767 || rawGas > 32767) {
       s.sensorsValid = false;
-      Serial.println("ADS1115 read error: out of range");
     } else {
       s.flameRaw = rawFlame;
       s.gasRaw = rawGas;
@@ -509,43 +418,46 @@ void collectSensorSample() {
     s.sensorsValid = false;
   }
 
-  // ---- Digital flame + fire state label ----
+  // ---- Digital State & Directional Azimuth ----
   s.flameDigital = fireDetected ? 1 : 0;
-  s.servoAngle = (uint8_t)(fireDetected ? fireAngle : scanAngle);
+  s.servoAngle   = (uint8_t)(fireDetected ? fireAngle : scanAngle);
 
-  bool mq2WarmedUp = (millis() > MQ2_WARMUP_MS);
+  // ---- Transparent Rule-Based Fire State Evaluation ----
+  bool mq2WarmedUp = (millis() - systemStartMs > MQ2_WARMUP_MS);
 
-  if (s.flameDigital) {
+  if (s.flameDigital == 1 && s.flameRaw < FLAME_ANALOG_THRESHOLD) {
+    s.fireState = STATE_CRITICAL;
+  } else if (s.flameDigital == 1) {
     s.fireState = STATE_FIRE;
+  } else if (mq2WarmedUp && s.sensorsValid && s.gasRaw > GAS_PREFIRE_RAW_THRESHOLD) {
+    s.fireState = STATE_PRE_FIRE;
   } else if (mq2WarmedUp && s.sensorsValid && s.gasRaw > GAS_WARNING_RAW_THRESHOLD) {
     s.fireState = STATE_WARNING;
   } else {
     s.fireState = STATE_NORMAL;
   }
-  // PRE_FIRE / CRITICAL are reserved for future multi-sensor fusion logic
-  // once enough labeled data has been collected - not auto-assigned yet.
 
-  // ---- Push into ring buffer (non-blocking, just memory) ----
+  lastLoggedFireState = s.fireState;
+
+  // ---- Push into RAM Ring Buffer ----
   if (bufCount >= SAMPLE_BUFFER_SIZE) {
-    // Buffer full (Firebase/WiFi has been down for a while) - drop oldest.
     droppedSamples++;
-    bufHead = (bufHead + 1) % SAMPLE_BUFFER_SIZE; // advance read start too
+    bufHead = (bufHead + 1) % SAMPLE_BUFFER_SIZE;
     bufCount--;
   }
+
   uint8_t writeIdx = (bufHead + bufCount) % SAMPLE_BUFFER_SIZE;
   sampleBuffer[writeIdx] = s;
   bufCount++;
 }
 
 // =====================================================================
-// FIREBASE UPLOAD - sends ONE oldest buffered sample per call
+// 9. FIREBASE & LOCAL SERVER UPLOAD
 // =====================================================================
 
 bool uploadOldestSample() {
-  if (bufCount == 0) return true; // nothing to do
-
-  if (WiFi.status() != WL_CONNECTED) return false;
-  if (!Firebase.ready()) return false;
+  if (bufCount == 0) return true;
+  if (WiFi.status() != WL_CONNECTED || !Firebase.ready()) return false;
 
   SensorSample &s = sampleBuffer[bufHead];
 
@@ -553,8 +465,11 @@ bool uploadOldestSample() {
   bool haveIso = formatIsoTimestamp(s.epochTime, isoTime, sizeof(isoTime));
 
   FirebaseJson json;
-  if (haveIso) json.set("timestamp", isoTime);
-  json.set("uptime_ms", (double)s.uptimeMs);
+  if (haveIso) {
+    json.set("timestamp", isoTime);
+  } else {
+    json.set("timestamp", String(s.uptimeMs));
+  }
   json.set("device_id", DEVICE_ID);
   json.set("experiment_id", EXPERIMENT_ID);
   json.set("temperature", s.temperature);
@@ -564,34 +479,57 @@ bool uploadOldestSample() {
   json.set("flame_voltage", s.flameVoltage);
   json.set("gas_raw", s.gasRaw);
   json.set("gas_voltage", s.gasVoltage);
-  json.set("fire_state", fireStateToStr(s.fireState));
   json.set("flame_digital", s.flameDigital);
+  json.set("fire_state", fireStateToStr(s.fireState));
   json.set("servo_angle", s.servoAngle);
   json.set("sensors_valid", s.sensorsValid);
+  json.set("uptime_ms", (double)s.uptimeMs);
 
-  String path = String("/smart_fire_detection/devices/") + DEVICE_ID + "/readings";
-
+  // Exact path: /devices/ESP1/readings/<unique_push_id>
+  String path = String("/devices/") + DEVICE_ID + "/readings";
   bool ok = Firebase.pushJSON(fbdo, path, json);
+
+  // Optional: Post to local Multi-Integration server
+#if ENABLE_LOCAL_BACKEND_SERVER
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+    http.begin(client, BACKEND_SERVER_URL);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-API-Key", BACKEND_API_KEY);
+
+    String localJson = "{"
+      "\"device_id\":\"" + String(DEVICE_ID) + "\","
+      "\"flame_raw\":" + String(s.flameRaw) + ","
+      "\"temp_c\":" + String(s.temperature, 2) + ","
+      "\"humidity\":" + String(s.humidity, 2) + ","
+      "\"gas_raw\":" + String(s.gasRaw) + ","
+      "\"fire_angle\":" + String(s.servoAngle) + ","
+      "\"is_fire\":" + String(s.flameDigital == 1 ? "true" : "false") +
+    "}";
+    http.POST(localJson);
+    http.end();
+  }
+#endif
 
   if (ok) {
     bufHead = (bufHead + 1) % SAMPLE_BUFFER_SIZE;
     bufCount--;
-  } else {
-    Serial.print("Firebase upload FAILED: ");
-    Serial.println(fbdo.errorReason());
   }
   return ok;
 }
 
 // =====================================================================
-// SERIAL OUTPUT
+// 10. SERIAL MONITOR TELEMETRY FORMAT
 // =====================================================================
 
-void printSerialStatus(const SensorSample &s, bool uploaded) {
+void printSerialStatus(const SensorSample &s, bool uploaded, const String &errorMsg = "") {
   Serial.println(F("========================================"));
   Serial.println(F("SMART FIRE DETECTION"));
-  Serial.println(F("===================="));
-  Serial.print(F("Temperature : ")); Serial.print(s.temperature, 2); Serial.println(F(" C"));
+  Serial.println(F("========================================"));
+  Serial.print(F("Device      : ")); Serial.println(DEVICE_ID);
+  Serial.println();
+  Serial.print(F("Temperature : ")); Serial.print(s.temperature, 2); Serial.println(F(" °C"));
   Serial.print(F("Humidity    : ")); Serial.print(s.humidity, 2); Serial.println(F(" %"));
   Serial.print(F("Pressure    : ")); Serial.print(s.pressure, 2); Serial.println(F(" hPa"));
   Serial.println();
@@ -601,28 +539,42 @@ void printSerialStatus(const SensorSample &s, bool uploaded) {
   Serial.print(F("Gas Raw     : ")); Serial.println(s.gasRaw);
   Serial.print(F("Gas Volt    : ")); Serial.print(s.gasVoltage, 3); Serial.println(F(" V"));
   Serial.println();
+  Serial.print(F("Flame Digital : ")); Serial.println(s.flameDigital);
+  Serial.println();
   Serial.print(F("Fire State  : ")); Serial.println(fireStateToStr(s.fireState));
-  Serial.print(F("Firebase    : ")); Serial.println(uploaded ? F("UPLOADED") : F("QUEUED"));
-  Serial.print(F("Buffer      : ")); Serial.print(bufCount); Serial.print("/"); Serial.println(SAMPLE_BUFFER_SIZE);
+  Serial.println();
+  Serial.print(F("Servo Angle : ")); Serial.println(s.servoAngle);
+  Serial.println();
+
+  if (uploaded) {
+    Serial.println(F("Firebase    : UPLOADED"));
+  } else {
+    Serial.println(F("Firebase    : QUEUED"));
+    if (errorMsg.length() > 0) {
+      Serial.print(F("Error       : ")); Serial.println(errorMsg);
+    }
+  }
+  Serial.print(F("Queue Buffer: ")); Serial.print(bufCount); Serial.print(F("/")); Serial.println(SAMPLE_BUFFER_SIZE);
   if (droppedSamples > 0) {
     Serial.print(F("Dropped     : ")); Serial.println(droppedSamples);
   }
-  Serial.println(F("========================================"));
+  Serial.println(F("========================================\n"));
 }
 
 // =====================================================================
-// SETUP
+// 11. SETUP
 // =====================================================================
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(300);
   systemStartMs = millis();
 
   Serial.println();
-  Serial.println("================================");
-  Serial.println(" SMART FIRE DETECTION ESP1");
-  Serial.println("================================");
+  Serial.println(F("========================================"));
+  Serial.println(F(" SMART FIRE DETECTION - ALL-IN-ONE"));
+  Serial.println(F(" (Telegram completely removed)"));
+  Serial.println(F("========================================"));
 
   pinMode(FLAME_SENSOR_GPIO, INPUT);
 
@@ -632,58 +584,40 @@ void setup() {
 
   startWiFi();
 
+  // ESP-NOW Configuration
   int channel = WiFi.channel();
-  if (channel < 1 || channel > 13) {
-    Serial.println("WARNING: Invalid WiFi channel. Using channel 6.");
-    channel = 6;
-  }
-  Serial.print("ESP-NOW Channel: ");
-  Serial.println(channel);
-
+  if (channel < 1 || channel > 13) channel = 6;
   wifi_set_channel(channel);
 
-  Serial.println("Starting ESP-NOW...");
+  Serial.println(F("Initializing ESP-NOW controller..."));
   if (esp_now_init() != 0) {
-    Serial.println("ESP-NOW INIT FAILED");
-    while (true) delay(1000);
-  }
-  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-
-  if (esp_now_add_peer(ESP2_MAC, ESP_NOW_ROLE_SLAVE, channel, NULL, 0) != 0) {
-    Serial.println("ESP2 peer add failed!");
+    Serial.println(F("ESP-NOW initialization failed. Continuing local detection."));
   } else {
-    Serial.println("ESP2 peer added successfully.");
+    esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+    if (esp_now_add_peer(ESP2_MAC, ESP_NOW_ROLE_SLAVE, channel, NULL, 0) == 0) {
+      Serial.println(F("ESP-NOW: ESP2 Extinguisher Peer Added."));
+    }
   }
-
-  Serial.println();
-  Serial.println("ESP-NOW READY");
 
   initSensors();
   initFirebase();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    testTelegram();
-  } else {
-    Serial.println("Telegram test skipped. WiFi is not connected.");
-  }
-
-  Serial.println();
-  Serial.println("================================");
-  Serial.println(" SYSTEM READY");
-  Serial.println("================================");
+  Serial.println(F("========================================"));
+  Serial.println(F(" SYSTEM READY & STREAMING"));
+  Serial.println(F("========================================\n"));
 
   lastSampleTime = millis();
   lastUploadAttempt = millis();
 }
 
 // =====================================================================
-// LOOP
+// 12. MAIN LOOP (Non-blocking priorities)
 // =====================================================================
 
 void loop() {
   checkWiFi();
 
-  // ---- Fire scanning / detection (unchanged, highest priority, fast) ----
+  // Priority 1: High-Speed Fire Scanning & Actuation
   if (!fireDetected) {
     scanForFire();
   }
@@ -691,80 +625,63 @@ void loop() {
   if (fireDetected) {
     scanServo.write(fireAngle);
 
-    if (millis() - lastSendTime >= SEND_INTERVAL) {
+    // Continuous ESP-NOW signal transmission to ESP2 extinguisher
+    if (millis() - lastSendTime >= ESPNOW_SEND_INTERVAL) {
       lastSendTime = millis();
       sendFireData(true, fireAngle);
     }
 
     if (!previousFire) {
       previousFire = true;
-      Serial.println();
-      Serial.println("************************");
-      Serial.println("       FIRE ACTIVE");
-      Serial.print("       ANGLE: ");
-      Serial.println(fireAngle);
-      Serial.println("************************");
-
-      if (WiFi.status() == WL_CONNECTED) {
-        bool sent = sendTelegramAlert();
-        lastTelegramTime = sent ? millis() : millis() - TELEGRAM_INTERVAL + 5000;
-      } else {
-        Serial.println("WiFi unavailable. Telegram will be retried.");
-        lastTelegramTime = millis() - TELEGRAM_INTERVAL + 5000;
-      }
+      Serial.println(F("****************************************"));
+      Serial.print(F("🔥 FIRE DETECTED! BEARING: ")); Serial.print(fireAngle); Serial.println(F("°"));
+      Serial.println(F("****************************************"));
     }
 
-    if (millis() - lastTelegramTime >= TELEGRAM_INTERVAL) {
-      if (WiFi.status() == WL_CONNECTED) {
-        bool sent = sendTelegramAlert();
-        if (sent) lastTelegramTime = millis();
-      }
-    }
-
-    if (!flameDetected()) {
+    // Check if fire has been cleared
+    if (!flameDigitalDetected()) {
       delay(50);
-      if (!flameDetected()) {
+      if (!flameDigitalDetected()) {
         fireDetected = false;
-        Serial.println();
-        Serial.println("Fire cleared.");
-
-        for (int i = 0; i < 5; i++) {
+        previousFire = false;
+        Serial.println(F("\nIssue Cleared: Fire Extinguished."));
+        for (int i = 0; i < 4; i++) {
           sendFireData(false, fireAngle);
           delay(20);
         }
-
-        if (WiFi.status() == WL_CONNECTED) {
-          sendTelegramClear();
-        } else {
-          Serial.println("WiFi unavailable. Fire clear Telegram not sent.");
-        }
-
-        previousFire = false;
         scanAngle = fireAngle;
         scanDirection = 1;
       }
     }
   } else {
-    if (millis() - lastSendTime >= SEND_INTERVAL) {
+    if (millis() - lastSendTime >= ESPNOW_SEND_INTERVAL) {
       lastSendTime = millis();
       sendFireData(false, scanAngle);
     }
   }
 
-  // ---- Sensor sampling: ~1 Hz, never blocks on network ----
+  // Priority 2: 1 Hz Synchronized Multi-Sensor Sampling
   if (millis() - lastSampleTime >= SENSOR_SAMPLE_INTERVAL) {
     lastSampleTime = millis();
     collectSensorSample();
-    printSerialStatus(sampleBuffer[(bufHead + bufCount - 1) % SAMPLE_BUFFER_SIZE], false);
   }
 
-  // ---- Firebase upload: drains the queue, one sample per attempt.
-  //      If a backlog exists, retry immediately instead of waiting the
-  //      full interval, so the queue drains faster after an outage. ----
+  // Priority 3: Non-Blocking Firebase Upload
   bool dueForUpload = (millis() - lastUploadAttempt >= FIREBASE_UPLOAD_INTERVAL);
   bool backlog = (bufCount > 1);
+
   if (bufCount > 0 && (dueForUpload || backlog)) {
     lastUploadAttempt = millis();
-    uploadOldestSample();
+    uint8_t currentCount = bufCount;
+    bool uploaded = uploadOldestSample();
+    
+    // Print telemetry to Serial Monitor
+    if (uploaded && currentCount > 0) {
+      uint8_t readIdx = (bufHead == 0) ? (SAMPLE_BUFFER_SIZE - 1) : (bufHead - 1);
+      printSerialStatus(sampleBuffer[readIdx], true);
+    } else if (!uploaded) {
+      uint8_t peekIdx = bufHead;
+      printSerialStatus(sampleBuffer[peekIdx], false, fbdo.errorReason());
+    }
   }
 }
