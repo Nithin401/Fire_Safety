@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FireShield AI — Unified Operations & Mobile Command Suite</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg-main: #0b1120;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --accent-primary: #3b82f6;
+            --accent-danger: #ef4444;
+            --accent-warning: #f59e0b;
+            --accent-success: #10b981;
+        }
+        body {
+            background-color: var(--bg-main);
+            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        .navbar-custom {
+            background-color: #0f172a;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.75rem 1.5rem;
+        }
+        .nav-pills .nav-link {
+            color: #94a3b8;
+            font-size: 0.88rem;
+            font-weight: 600;
+            border-radius: 8px;
+            padding: 0.45rem 0.9rem;
+            transition: all 0.2s ease;
+        }
+        .nav-pills .nav-link.active {
+            background-color: var(--accent-primary);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+        }
+        .card-custom {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }
+        .badge-safe { background-color: var(--accent-success); }
+        .badge-warning { background-color: var(--accent-warning); color: #000; }
+        .badge-high_risk { background-color: #f97316; }
+        .badge-fire { background-color: var(--accent-danger); animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.45; } 100% { opacity: 1; } }
+        
+        .gauge-bar { height: 10px; border-radius: 5px; background-color: #334155; overflow: hidden; }
+        .gauge-fill { height: 100%; transition: width 0.5s ease; }
+        .metric-val { font-size: 1.5rem; font-weight: 700; }
+        
+        .radar-compass {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            border: 2px dashed #64748b;
+            position: relative;
+            margin: 0 auto;
+            background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%);
+        }
+        .radar-needle {
+            width: 3px;
+            height: 42px;
+            background-color: var(--accent-danger);
+            position: absolute;
+            bottom: 45px;
+            left: 43px;
+            transform-origin: bottom center;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 8px rgba(239,68,68,0.8);
+        }
+        
+        /* Mobile Device Frame Mockup */
+        .phone-mockup {
+            width: 100%;
+            max-width: 380px;
+            height: 720px;
+            background-color: #000000;
+            border-radius: 40px;
+            border: 10px solid #1e293b;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px #334155;
+            position: relative;
+            overflow: hidden;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .phone-island {
+            width: 110px;
+            height: 22px;
+            background-color: #000000;
+            border-radius: 20px;
+            margin: 8px auto 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+        .phone-screen {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background-color: #0f172a;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Master Command Bar -->
+    <nav class="navbar navbar-expand-lg navbar-custom sticky-top">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-2">
+                <span class="fs-4">🛡️</span>
+                <div>
+                    <h5 class="fw-bold mb-0 text-white">FIRESHIELD AI <span class="badge bg-primary fs-6 py-1">UNIFIED COMMAND SUITE</span></h5>
+                    <small class="text-secondary d-none d-sm-inline">All-in-One Real-Time Telemetry & Mobile App Center</small>
+                </div>
+            </div>
+
+            <!-- View Switcher Tabs -->
+            <ul class="nav nav-pills mx-auto my-2 my-lg-0" id="viewTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="dual-tab" onclick="switchView('dual')">
+                        <i class="bi bi-layout-split me-1"></i> Dual Command Center
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="ops-tab" onclick="switchView('ops')">
+                        <i class="bi bi-speedometer2 me-1"></i> Fleet Ops Dashboard
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="mobile-tab" onclick="switchView('mobile')">
+                        <i class="bi bi-phone me-1"></i> Mobile App
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Connection & GitHub Badges -->
+            <div class="d-flex align-items-center gap-2">
+                <span id="backend-status" class="badge bg-success p-2">ONLINE | Autonomous Mode</span>
+                <a href="https://github.com/Nithin401/Fire_Safety" target="_blank" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-github"></i> Repo ↗
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container-fluid py-4 px-3 px-md-4">
+        <!-- Dual View (Side-by-Side Command Center) -->
+        <div id="view-dual" class="row g-4">
+            <!-- Left Column: Ops Fleet & Telemetry Controls -->
+            <div class="col-xl-7 col-lg-7">
+                <!-- Simulation Control Injector -->
+                <div class="card card-custom p-3 mb-4 shadow-sm">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-danger p-2"><i class="bi bi-broadcast"></i></span>
+                            <span class="fw-bold text-white">Live Sensor Event Simulation:</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-success" onclick="injectTelemetry('NORMAL')">Simulate NORMAL</button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="injectTelemetry('FALSE_ALARM')">Simulate FALSE ALARM</button>
+                            <button class="btn btn-sm btn-danger fw-bold" onclick="injectTelemetry('FIRE')">🔥 Simulate FIRE EVENT</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Detection Zones Grid -->
+                <h6 class="text-secondary fw-bold text-uppercase mb-3"><i class="bi bi-grid-3x3-gap me-1"></i> Active Detection Zones</h6>
+                <div class="row g-3" id="device-container-dual">
+                    <!-- Dynamic Device Cards Injected Here -->
+                </div>
+
+                <!-- Real-time Emergency Alert Feed -->
+                <div class="card card-custom p-3 mt-4 shadow-sm">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="text-white fw-bold mb-0"><i class="bi bi-bell-fill text-danger me-2"></i>Live Incident Alerts & Audit Trail</h6>
+                        <button class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="clearAlerts()">Clear</button>
+                    </div>
+                    <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
+                        <table class="table table-dark table-hover mb-0 small">
+                            <thead>
+                                <tr class="text-secondary">
+                                    <th>Time</th>
+                                    <th>Severity</th>
+                                    <th>Zone</th>
+                                    <th>Message</th>
+                                    <th>Angle</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alert-rows-dual">
+                                <tr><td colspan="6" class="text-center text-muted">Scanning zones... No active alerts.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Interactive Mobile App Mockup Frame -->
+            <div class="col-xl-5 col-lg-5 d-flex flex-column align-items-center">
+                <div class="d-flex align-items-center justify-content-between w-100 mb-3 px-2" style="max-width: 380px;">
+                    <span class="text-secondary small fw-bold text-uppercase"><i class="bi bi-phone me-1"></i> FireShield AI Mobile Client</span>
+                    <button class="btn btn-xs btn-outline-info py-0" onclick="reloadIframe()"><i class="bi bi-arrow-repeat"></i> Reload App</button>
+                </div>
+                
+                <div class="phone-mockup">
+                    <div class="phone-island"></div>
+                    <iframe id="mobile-iframe-dual" class="phone-screen" src="app/index.html"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fullscreen Ops Dashboard View -->
+        <div id="view-ops" class="d-none">
+            <div class="card card-custom p-3 mb-4 shadow-sm">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <span class="fw-bold text-white"><i class="bi bi-broadcast me-1"></i> Sensor Event Testing Injector:</span>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-success" onclick="injectTelemetry('NORMAL')">Simulate NORMAL</button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="injectTelemetry('FALSE_ALARM')">Simulate FALSE ALARM</button>
+                        <button class="btn btn-sm btn-danger fw-bold" onclick="injectTelemetry('FIRE')">🔥 Simulate FIRE EVENT</button>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-4" id="device-container-full"></div>
+            <div class="card card-custom p-4 mt-4 shadow-sm">
+                <h5 class="fw-bold text-white mb-3"><i class="bi bi-bell-fill text-danger me-2"></i>Full Fleet Alert Audit Trail</h5>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr class="text-secondary">
+                                <th>Timestamp</th>
+                                <th>Severity</th>
+                                <th>Zone / Device</th>
+                                <th>Message</th>
+                                <th>Aim Angle</th>
+                                <th>Status / Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alert-rows-full"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fullscreen Mobile App View -->
+        <div id="view-mobile" class="d-none text-center">
+            <div class="d-flex justify-content-center">
+                <div class="phone-mockup" style="height: 800px; max-width: 420px;">
+                    <div class="phone-island"></div>
+                    <iframe id="mobile-iframe-full" class="phone-screen" src="app/index.html"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentView = 'dual';
+        let BACKEND_URL = "http://localhost:5000";
+        const API_KEY = "fireshield_local_dev_key_2026";
+        let isBackendOnline = false;
+
+        function switchView(view) {
+            currentView = view;
+            document.getElementById('dual-tab').classList.toggle('active', view === 'dual');
+            document.getElementById('ops-tab').classList.toggle('active', view === 'ops');
+            document.getElementById('mobile-tab').classList.toggle('active', view === 'mobile');
+
+            document.getElementById('view-dual').classList.toggle('d-none', view !== 'dual');
+            document.getElementById('view-ops').classList.toggle('d-none', view !== 'ops');
+            document.getElementById('view-mobile').classList.toggle('d-none', view !== 'mobile');
+            renderAll();
+        }
+
+        function reloadIframe() {
+            const if1 = document.getElementById('mobile-iframe-dual');
+            const if2 = document.getElementById('mobile-iframe-full');
+            if (if1) if1.src = if1.src;
+            if (if2) if2.src = if2.src;
+        }
+
+        let localDevices = [
+            {
+                id: "dev_001",
+                name: "Kitchen Fire Node",
+                room: "Kitchen",
+                fireState: "SAFE",
+                riskScore: 10.0,
+                fireAngle: 90,
+                tempC: 24.8,
+                flameRaw: 850,
+                gasRaw: 125,
+                responseStatus: "IDLE",
+                aiMetadata: { mlPrediction: "NORMAL", mlActive: true }
+            },
+            {
+                id: "dev_002",
+                name: "Server Room Monitor",
+                room: "Server Room",
+                fireState: "SAFE",
+                riskScore: 4.5,
+                fireAngle: 0,
+                tempC: 20.2,
+                flameRaw: 960,
+                gasRaw: 65,
+                responseStatus: "IDLE",
+                aiMetadata: { mlPrediction: "NORMAL", mlActive: true }
+            }
+        ];
+
+        let localAlerts = [
+            {
+                id: "alt_init",
+                timestamp: new Date().toISOString(),
+                severity: "info",
+                roomId: "Kitchen",
+                title: "FireShield AI Engine Online",
+                message: "Autonomous multi-sensor monitoring active. All zones normal.",
+                fireAngle: 90,
+                acknowledged: true
+            }
+        ];
+
+        async function fetchData() {
+            let backendReachable = false;
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1200);
+                const hRes = await fetch(`${BACKEND_URL}/health`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (hRes.ok) {
+                    const hData = await hRes.json();
+                    document.getElementById('backend-status').className = 'badge bg-success p-2';
+                    document.getElementById('backend-status').innerText = 'ONLINE | Cloud Synchronized';
+                    backendReachable = true;
+                    isBackendOnline = true;
+                }
+            } catch (e) {
+                document.getElementById('backend-status').className = 'badge bg-info text-dark p-2';
+                document.getElementById('backend-status').innerText = 'STANDALONE | Unified Offline Suite';
+                isBackendOnline = false;
+            }
+
+            if (backendReachable) {
+                try {
+                    const dRes = await fetch(`${BACKEND_URL}/api/devices`);
+                    const devices = await dRes.json();
+                    if (devices && devices.length > 0) localDevices = devices;
+                } catch (e) {}
+
+                try {
+                    const aRes = await fetch(`${BACKEND_URL}/api/alerts`);
+                    const alerts = await aRes.json();
+                    if (alerts && alerts.length > 0) localAlerts = alerts;
+                } catch (e) {}
+            } else {
+                // Natural ambient sensor drift simulation
+                localDevices.forEach(d => {
+                    if (d.fireState !== 'FIRE') {
+                        d.tempC = +(d.tempC + (Math.random() - 0.5) * 0.15).toFixed(1);
+                        d.flameRaw = Math.min(1023, Math.max(800, d.flameRaw + Math.floor((Math.random() - 0.5) * 6)));
+                    }
+                });
+            }
+
+            renderAll();
+        }
+
+        function renderAll() {
+            renderDevices(localDevices, 'device-container-dual');
+            renderDevices(localDevices, 'device-container-full');
+            renderAlerts(localAlerts, 'alert-rows-dual');
+            renderAlerts(localAlerts, 'alert-rows-full');
+        }
+
+        function renderDevices(devices, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+
+            devices.forEach(dev => {
+                const state = dev.fireState || 'SAFE';
+                const badgeClass = `badge-${state.toLowerCase()}`;
+                const risk = dev.riskScore || 0;
+                const riskColor = risk > 80 ? '#ef4444' : (risk > 50 ? '#f59e0b' : '#10b981');
+                const angle = dev.fireAngle !== undefined ? dev.fireAngle : 90;
+                const temp = (dev.tempC || dev.ambientTemperature || 24.5).toFixed(1);
+                
+                const card = document.createElement('div');
+                card.className = containerId.includes('dual') ? 'col-md-6' : 'col-md-6 col-lg-4';
+                card.innerHTML = `
+                    <div class="card card-custom p-3 h-100 shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <h6 class="fw-bold mb-0 text-white">${dev.name || dev.id}</h6>
+                                <small class="text-secondary">Zone: ${dev.room || 'General'}</small>
+                            </div>
+                            <span class="badge ${badgeClass} py-1 px-2">${state}</span>
+                        </div>
+                        
+                        <div class="row g-2 text-center my-1">
+                            <div class="col-4">
+                                <div class="text-secondary" style="font-size: 0.72rem;">Temperature</div>
+                                <div class="metric-val text-warning" style="font-size: 1.25rem;">${temp}°C</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-secondary" style="font-size: 0.72rem;">Flame ADC</div>
+                                <div class="metric-val text-danger" style="font-size: 1.25rem;">${dev.flameRaw || 850}</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-secondary" style="font-size: 0.72rem;">Gas ADC</div>
+                                <div class="metric-val text-success" style="font-size: 1.25rem;">${dev.gasRaw || 120}</div>
+                            </div>
+                        </div>
+
+                        <div class="my-2">
+                            <div class="d-flex justify-content-between text-secondary mb-1" style="font-size: 0.75rem;">
+                                <span>Hybrid AI Fire Risk</span>
+                                <span class="fw-bold" style="color: ${riskColor}">${risk.toFixed(1)}%</span>
+                            </div>
+                            <div class="gauge-bar">
+                                <div class="gauge-fill" style="width: ${risk}%; background-color: ${riskColor}"></div>
+                            </div>
+                        </div>
+
+                        <div class="row align-items-center my-1 pt-2 border-top border-secondary">
+                            <div class="col-6 text-center">
+                                <div class="radar-compass">
+                                    <div class="radar-needle" style="transform: rotate(${angle - 90}deg)"></div>
+                                </div>
+                                <small class="text-secondary d-block mt-1" style="font-size: 0.72rem;">Aim Angle: ${angle}°</small>
+                            </div>
+                            <div class="col-6 small">
+                                <span class="text-secondary d-block">Water Actuator:</span>
+                                <span class="badge ${dev.responseStatus === 'ACTIVE' ? 'bg-danger' : 'bg-secondary'} py-1">${dev.responseStatus || 'IDLE'}</span>
+                                <span class="text-secondary d-block mt-1">ML Advisory:</span>
+                                <span class="badge bg-dark border border-secondary text-light py-1">${dev.aiMetadata?.mlPrediction || 'NORMAL'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderAlerts(alerts, containerId) {
+            const tbody = document.getElementById(containerId);
+            if (!tbody) return;
+            if (!alerts || alerts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No active alerts</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            alerts.slice(0, 8).forEach(a => {
+                const tr = document.createElement('tr');
+                const isCrit = a.severity === 'critical' || a.fireState === 'FIRE';
+                tr.innerHTML = `
+                    <td>${new Date(a.timestamp).toLocaleTimeString()}</td>
+                    <td><span class="badge ${isCrit ? 'bg-danger' : 'bg-info'}">${a.severity || (isCrit ? 'critical' : 'info')}</span></td>
+                    <td>${a.roomId || a.deviceId || 'Kitchen'}</td>
+                    <td>${a.message || a.title}</td>
+                    <td>${a.fireAngle !== undefined ? a.fireAngle + '°' : 'N/A'}</td>
+                    <td>${a.acknowledged ? '<span class="text-success small">✓ Resolved</span>' : `<button class="btn btn-xs btn-outline-light py-0 px-2" onclick="ackAlert('${a.id}')">Ack</button>`}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function ackAlert(id) {
+            localAlerts = localAlerts.map(a => a.id === id ? { ...a, acknowledged: true } : a);
+            if (isBackendOnline) {
+                try {
+                    await fetch(`${BACKEND_URL}/api/alerts/${id}/ack`, { method: 'POST' });
+                } catch (e) {}
+            }
+            renderAll();
+        }
+
+        function clearAlerts() {
+            localAlerts = [];
+            renderAll();
+        }
+
+        async function injectTelemetry(type) {
+            let payload = {
+                device_id: "dev_001",
+                room_id: "Kitchen",
+                flame_raw: 850,
+                temp_c: 24.8,
+                humidity: 55.0,
+                gas_raw: 125,
+                fire_angle: 90,
+                is_fire: false
+            };
+
+            if (type === 'FIRE') {
+                payload.flame_raw = 140;
+                payload.temp_c = 68.5;
+                payload.gas_raw = 650;
+                payload.fire_angle = 45;
+                payload.is_fire = true;
+            } else if (type === 'FALSE_ALARM') {
+                payload.flame_raw = 310;
+                payload.temp_c = 24.8;
+                payload.gas_raw = 125;
+                payload.fire_angle = 120;
+            }
+
+            const dev = localDevices.find(d => d.id === payload.device_id);
+            if (dev) {
+                dev.flameRaw = payload.flame_raw;
+                dev.tempC = payload.temp_c;
+                dev.gasRaw = payload.gas_raw;
+                dev.fireAngle = payload.fire_angle;
+                if (type === 'FIRE') {
+                    dev.fireState = 'FIRE';
+                    dev.riskScore = 98.5;
+                    dev.responseStatus = 'ACTIVE';
+                    dev.aiMetadata = { mlPrediction: 'FIRE', mlActive: true };
+                    localAlerts.unshift({
+                        id: 'alt_' + Date.now(),
+                        timestamp: new Date().toISOString(),
+                        severity: 'critical',
+                        roomId: dev.room,
+                        title: '🔥 CRITICAL FIRE ALERT: ' + dev.room,
+                        message: `Active thermal combustion! Risk: 98.5% | Angle: ${payload.fire_angle}°`,
+                        fireAngle: payload.fire_angle,
+                        acknowledged: false
+                    });
+                } else if (type === 'FALSE_ALARM') {
+                    dev.fireState = 'WARNING';
+                    dev.riskScore = 42.0;
+                    dev.responseStatus = 'IDLE';
+                    dev.aiMetadata = { mlPrediction: 'FALSE_ALARM', mlActive: true };
+                } else {
+                    dev.fireState = 'SAFE';
+                    dev.riskScore = 10.0;
+                    dev.responseStatus = 'IDLE';
+                    dev.aiMetadata = { mlPrediction: 'NORMAL', mlActive: true };
+                }
+            }
+
+            if (isBackendOnline) {
+                try {
+                    await fetch(`${BACKEND_URL}/api/telemetry`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (e) {}
+            }
+
+            renderAll();
+        }
+
+        setInterval(fetchData, 2000);
+        fetchData();
+    </script>
+</body>
+</html>

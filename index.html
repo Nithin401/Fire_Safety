@@ -14,7 +14,7 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="/FireShieldAI/">
+  <base href="/Fire_Safety/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
@@ -31,6 +31,182 @@
 
   <title>fireshield_app</title>
   <link rel="manifest" href="manifest.json">
+  
+  <!-- Google Maps Web SDK (No Key for Dev Mode to prevent crashes) -->
+  <script src="https://maps.googleapis.com/maps/api/js"></script>
+
+  <!-- FireShield App Native Audio & Notification Engine -->
+  <script>
+    window.FireShieldNotifications = {
+      openUrl: function(url) {
+        try {
+          if (url.startsWith('mailto:') || url.startsWith('sms:') || url.startsWith('tel:')) {
+            window.location.href = url;
+          } else {
+            window.open(url, '_blank');
+          }
+        } catch (e) {
+          console.log("Open URL error:", e);
+        }
+      },
+      downloadCsv: function(filename, content) {
+        try {
+          var blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+          var link = document.createElement("a");
+          var url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", filename);
+          link.style.visibility = 'hidden';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (e) {
+          console.log("CSV download error:", e);
+        }
+      },
+      _sirenInterval: null,
+      _sirenAudioCtx: null,
+      _speechInterval: null,
+      makeAiEmergencyVoiceCall: function(speechText) {
+        try {
+          FireShieldNotifications.stopAiVoiceCall();
+
+          // 1. Play continuous emergency siren sound out of device speaker
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            var ctx = new AudioCtx();
+            FireShieldNotifications._sirenAudioCtx = ctx;
+            var playWarble = function() {
+              if (!FireShieldNotifications._sirenAudioCtx) return;
+              try {
+                var osc = ctx.createOscillator();
+                var gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(960, ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(770, ctx.currentTime + 0.35);
+                gain.gain.setValueAtTime(0.4, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.65);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.65);
+              } catch (_) {}
+            };
+            playWarble();
+            FireShieldNotifications._sirenInterval = setInterval(playWarble, 850);
+          }
+
+          // 2. Play continuous loud AI speech broadcast repeatedly
+          var speakAlert = function() {
+            if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel();
+              var utterance = new SpeechSynthesisUtterance(speechText);
+              utterance.rate = 1.05;
+              utterance.pitch = 1.0;
+              utterance.volume = 1.0;
+              utterance.lang = 'en-US';
+              window.speechSynthesis.speak(utterance);
+            }
+          };
+
+          // Delay first speech slightly so initial siren catches attention immediately
+          setTimeout(speakAlert, 500);
+          FireShieldNotifications._speechInterval = setInterval(speakAlert, 8500);
+        } catch (e) {
+          console.log("AI voice call error:", e);
+        }
+      },
+      stopAiVoiceCall: function() {
+        try {
+          if (FireShieldNotifications._sirenInterval) {
+            clearInterval(FireShieldNotifications._sirenInterval);
+            FireShieldNotifications._sirenInterval = null;
+          }
+          if (FireShieldNotifications._speechInterval) {
+            clearInterval(FireShieldNotifications._speechInterval);
+            FireShieldNotifications._speechInterval = null;
+          }
+          if (FireShieldNotifications._sirenAudioCtx) {
+            FireShieldNotifications._sirenAudioCtx.close();
+            FireShieldNotifications._sirenAudioCtx = null;
+          }
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+          }
+        } catch (e) {}
+      },
+      requestPermission: function() {
+        if ("Notification" in window) {
+          return Notification.requestPermission();
+        }
+        return Promise.resolve("denied");
+      },
+      showNotification: function(title, body, severity) {
+        // 1. Play Emergency Alarm Siren / Beep via Web Audio API
+        try {
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            var ctx = new AudioCtx();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            if (severity === 'critical' || severity === 'fire') {
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(880, ctx.currentTime);
+              osc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 0.35);
+              gain.gain.setValueAtTime(0.3, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.5);
+            } else {
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+              gain.gain.setValueAtTime(0.2, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.3);
+            }
+          }
+        } catch (e) {
+          console.log("Audio notification error:", e);
+        }
+
+        // 2. Native System / Browser Notification
+        if ("Notification" in window) {
+          if (Notification.permission === "granted") {
+            try {
+              var n = new Notification(title, {
+                body: body,
+                icon: "icons/Icon-192.png",
+                badge: "icons/Icon-192.png",
+                tag: "fireshield-" + Date.now()
+              });
+              n.onclick = function() {
+                window.focus();
+                n.close();
+              };
+            } catch (err) {
+              console.log("Browser notification error:", err);
+            }
+          } else if (Notification.permission === "default") {
+            Notification.requestPermission().then(function(p) {
+              if (p === "granted") {
+                new Notification(title, { body: body, icon: "icons/Icon-192.png" });
+              }
+            });
+          }
+        }
+      }
+    };
+
+    // Auto-request permission on first user click anywhere in the app
+    document.addEventListener('click', function() {
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }, { once: true });
+  </script>
 </head>
 <body>
   <!--
