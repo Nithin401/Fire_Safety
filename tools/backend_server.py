@@ -515,6 +515,107 @@ def verify_alert(alert_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+import threading
+
+def rtdb_background_sync_worker():
+    """
+    PATH B Automation:
+    Listens to Firebase Realtime Database (/devices/ESP1/readings)
+    Ingests new sensor readings, computes Dynamic Room Baseline & ML Risk Inference,
+    and updates the database record with risk_score, ml_prediction, and room_baseline_temp.
+    """
+    print("[PATH B WORKER] Background Firebase RTDB Sync & ML Inference Worker Started.")
+    rtdb_base = os.getenv(
+        "FIREBASE_DATABASE_URL",
+        "https://smart-fire-detection-272bb-default-rtdb.asia-southeast1.firebasedatabase.app"
+    )
+    processed_push_ids = set()
+
+    while True:
+        try:
+            url = f"{rtdb_base}/devices/ESP1/readings.json?orderBy=\"$key\"&limitToLast=10"
+            req = urllib.request.Request(url, headers={"User-Agent": "FireShield-AI-Worker/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    if data and isinstance(data, dict):
+                        for push_id, val in data.items():
+                            if not isinstance(val, dict) or push_id in processed_push_ids:
+                                continue
+                            
+                            processed_push_ids.add(push_id)
+                            if len(processed_push_ids) > 1000:
+                                processed_push_ids = set(list(processed_push_ids)[-500:])
+
+                            # Check if ML inference already performed
+                            if val.get("ml_prediction") not in ["PENDING_INFERENCE", None, ""]:
+                                continue
+
+                            temp = float(val.get("temperature_c", val.get("temperature", 25.0)))
+                            hum = float(val.get("humidity_percent", val.get("humidity", 50.0)))
+                            gas = float(val.get("gas_raw", 1500.0))
+                            flame = float(val.get("flame_raw", 14000.0))
+                            flame_v = float(val.get("flame_voltage", 3.0))
+                            flame_d = int(val.get("flame_digital", 0))
+                            room_id = val.get("zone_id", "ZONE_1")
+
+                            # 1. Process via Dynamic Room Baseline
+                            reading_item = {
+                                "room_id": room_id,
+                                "device_id": val.get("device_id", "ESP1"),
+                                "temperature": temp,
+                                "humidity": hum,
+                                "gas_raw": gas,
+                                "flame_raw": flame,
+                                "flame_voltage": flame_v,
+                                "flame_digital": flame_d,
+                                "timestamp": val.get("timestamp", "")
+                            }
+                            baseline_res = dynamic_baseline_engine.process_reading(reading_item)
+
+                            # 2. Build feature vector for ML model
+                            ml_input = {
+                                "temperature": temp,
+                                "room_baseline_temp": baseline_res["room_baseline_temp"],
+                                "delta_temp_from_baseline": baseline_res["delta_temp_from_baseline"],
+                                "temp_rate_of_change_c_per_sec": baseline_res["temp_rate_of_change_c_per_sec"],
+                                "temp_zscore": baseline_res["temp_zscore"],
+                                "gas_raw": gas,
+                                "gas_voltage": float(val.get("gas_voltage", 0.5)),
+                                "room_baseline_gas": baseline_res["room_baseline_gas"],
+                                "delta_gas_from_baseline": baseline_res["delta_gas_from_baseline"],
+                                "gas_rate_of_change_per_sec": baseline_res["gas_rate_of_change_per_sec"],
+                                "gas_zscore": baseline_res["gas_zscore"],
+                                "flame_raw": flame,
+                                "flame_voltage": flame_v,
+                                "flame_digital": flame_d,
+                                "humidity": hum,
+                                "pressure": float(val.get("pressure_hpa", val.get("pressure", 1013.25)))
+                            }
+
+                            risk_score, fire_state, meta = hybrid_risk_engine.evaluate_hybrid_risk(ml_input)
+
+                            # Write enrichment back to RTDB
+                            patch_url = f"{rtdb_base}/devices/ESP1/readings/{push_id}.json"
+                            patch_data = json.dumps({
+                                "risk_score": float(risk_score),
+                                "ml_prediction": meta.get("ml_prediction") or baseline_res["ai_classification_verdict"],
+                                "ml_confidence": float(meta.get("ml_probabilities", {}).get("FIRE", 0.95 if fire_state == "FIRE" else 0.05)),
+                                "room_baseline_temp": baseline_res["room_baseline_temp"],
+                                "temp_rate_of_change": baseline_res["temp_rate_of_change_c_per_sec"],
+                                "ai_classification_verdict": baseline_res["ai_classification_verdict"]
+                            }).encode('utf-8')
+
+                            patch_req = urllib.request.Request(patch_url, data=patch_data, method='PATCH', headers={"Content-Type": "application/json"})
+                            try:
+                                with urllib.request.urlopen(patch_req, timeout=4) as patch_resp:
+                                    pass
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+        time.sleep(2)
+
 if __name__ == '__main__':
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("SERVER_PORT", 5000))
@@ -523,4 +624,8 @@ if __name__ == '__main__':
     print(f" Listening on http://{host}:{port}")
     print(f" Ingestion Key: {INGESTION_API_KEY}")
     print("=" * 65)
+    
+    # Start background Path B automated listener
+    threading.Thread(target=rtdb_background_sync_worker, daemon=True).start()
+    
     app.run(host=host, port=port, debug=False)

@@ -1,94 +1,83 @@
+/* =====================================================================
+   FIRESHIELD AI — ESP2 RESPONDER & EXTINGUISHER ACTUATOR NODE
+   =====================================================================
+   Platform: ESP8266 (NodeMCU 1.0 / WeMos D1 Mini / ESP-12E)
+   Architecture: High-Speed Peer-to-Peer ESP-NOW Safety Slave
+   
+   Actuators & Interfaces:
+     - D6 / GPIO12 : Nozzle Aiming Servo (0° to 180° bearing)
+     - D1 / GPIO5  : Extinguisher Solenoid Relay / Water Pump
+     - D2 / GPIO4  : High-Decibel Piezo Alarm Buzzer
+     - D5 / GPIO14 : Strobe Alert LED Indicator
+
+   Radio Link:
+     - ESP-NOW: Receives high-speed FireDataPacket from ESP1 detector
+     - Latency: < 10 ms (Local peer-to-peer radio, completely independent of WiFi/Cloud)
+     - Safety Watchdog: Automatic 1500 ms signal-loss timeout shutoff
+   ===================================================================== */
+
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 #include <Servo.h>
+#include "../include/packet_contract.h"
 
 extern "C" {
   #include "user_interface.h"
 }
 
-// =====================================================
-// GPIO
-// =====================================================
+// =====================================================================
+// 1. PIN CONFIGURATION
+// =====================================================================
+#define AIM_SERVO_GPIO 12     // D6 / GPIO12
+#define RELAY_GPIO      5     // D1 / GPIO5
+#define BUZZER_GPIO     4     // D2 / GPIO4
+#define LED_GPIO       14     // D5 / GPIO14
 
-#define AIM_SERVO_GPIO 12     // D6
-#define RELAY_GPIO      5     // D1
-#define BUZZER_GPIO     4     // D2
-#define LED_GPIO       14     // D5
-
-// =====================================================
-// ESP-NOW CHANNEL
-// =====================================================
-
-#define WIFI_CHANNEL 6
-
-// =====================================================
-// RELAY
-// =====================================================
-
-// true  = Active LOW
-// false = Active HIGH
+// Relay configuration: true = Active LOW (standard relay module), false = Active HIGH
 #define RELAY_ACTIVE_LOW true
 
-// =====================================================
-// SERVO CALIBRATION
-// =====================================================
-
-// Servo physical limits
-#define SERVO_MIN 5
+// Servo limits and calibration
+#define SERVO_MIN   5
 #define SERVO_MAX 175
-
-// Mechanical correction
 #define SERVO_OFFSET 0
-
-// Reverse servo direction if required
 #define REVERSE_SERVO false
 
-// =====================================================
-// SERVO
-// =====================================================
+// Radio channel (must match ESP1 WiFi channel)
+#define WIFI_CHANNEL 6
 
+// Safety Timeout: Extinguisher shuts OFF if no fire signal received for 1500ms
+#define SIGNAL_TIMEOUT_MS 1500
+
+// Optional specific ESP1 MAC filter (set all 0x00 to accept from any trusted local ESP1)
+uint8_t ESP1_MAC[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+bool MATCH_SPECIFIC_MAC = false;
+
+// =====================================================================
+// 2. STATE VARIABLES
+// =====================================================================
 Servo aimServo;
+int currentServoAngle = 90;
 
-// =====================================================
-// ESP1 MAC
-// =====================================================
+volatile bool packetAvailable = false;
+volatile bool receivedFire = false;
+volatile uint8_t receivedAngle = 90;
+volatile uint8_t receivedFireState = 0;
+volatile uint8_t receivedRiskScore = 0;
+char receivedZone[8] = "ZONE_1";
+volatile uint32_t receivedID = 0;
+volatile unsigned long lastPacketTime = 0;
 
-uint8_t ESP1_MAC[] = {
-  0xB4, 0x8A, 0x0A, 0xE3, 0xD2, 0x61
-};
-
-// =====================================================
-// DATA
-// =====================================================
-
-struct FireData {
+// Legacy 7-byte struct for backward-compatibility fallback
+struct LegacyFireData {
   uint8_t header;
   uint8_t fire;
   uint8_t angle;
   uint32_t packetID;
 };
 
-volatile bool packetAvailable = false;
-volatile bool receivedFire = false;
-volatile uint8_t receivedAngle = 90;
-volatile uint32_t receivedID = 0;
-volatile unsigned long lastPacketTime = 0;
-
-// =====================================================
-// SAFETY TIMEOUT
-// =====================================================
-
-#define SIGNAL_TIMEOUT 1000
-
-// =====================================================
-// CURRENT SERVO ANGLE
-// =====================================================
-
-int currentServoAngle = 90;
-
-// =====================================================
-// RELAY CONTROL
-// =====================================================
+// =====================================================================
+// 3. ACTUATOR CONTROLS
+// =====================================================================
 
 void relayOFF() {
   if (RELAY_ACTIVE_LOW) {
@@ -106,10 +95,6 @@ void relayON() {
   }
 }
 
-// =====================================================
-// FIRE ANGLE CONVERSION
-// =====================================================
-
 int convertAngle(int receivedAngle) {
   receivedAngle = constrain(receivedAngle, 0, 180);
   int outputAngle;
@@ -121,28 +106,14 @@ int convertAngle(int receivedAngle) {
   }
 
   outputAngle += SERVO_OFFSET;
-  outputAngle = constrain(outputAngle, SERVO_MIN, SERVO_MAX);
-  return outputAngle;
+  return constrain(outputAngle, SERVO_MIN, SERVO_MAX);
 }
 
-// =====================================================
-// AIM SERVO
-// =====================================================
-
-void aimAtFire(int receivedAngle) {
-  int servoAngle = convertAngle(receivedAngle);
+void aimAtFire(int angle) {
+  int servoAngle = convertAngle(angle);
   currentServoAngle = servoAngle;
   aimServo.write(servoAngle);
-
-  Serial.print("ESP1 angle: ");
-  Serial.print(receivedAngle);
-  Serial.print(" -> ESP2 servo: ");
-  Serial.println(servoAngle);
 }
-
-// =====================================================
-// EXTINGUISHER CONTROL
-// =====================================================
 
 void extinguisherOFF() {
   relayOFF();
@@ -155,37 +126,66 @@ void extinguisherON(int angle) {
   relayON();
   digitalWrite(BUZZER_GPIO, HIGH);
   digitalWrite(LED_GPIO, HIGH);
-  Serial.println("EXTINGUISHER ON");
+  Serial.print(F(">>> EXTINGUISHER ACTIVE <<< Bearing: "));
+  Serial.print(angle);
+  Serial.print(F("° | Zone: "));
+  Serial.println(receivedZone);
 }
 
-// =====================================================
-// ESP-NOW RECEIVE CALLBACK
-// =====================================================
+// =====================================================================
+// 4. ESP-NOW RECEIVE CALLBACK
+// =====================================================================
 
 void onDataReceive(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
-  if (len != sizeof(FireData)) return;
+  if (MATCH_SPECIFIC_MAC) {
+    if (memcmp(mac, ESP1_MAC, 6) != 0) return;
+  }
 
-  if (memcmp(mac, ESP1_MAC, 6) != 0) return;
+  // 1. Unified 18-byte FireDataPacket
+  if (len == sizeof(FireDataPacket)) {
+    FireDataPacket pkt;
+    memcpy(&pkt, incomingData, sizeof(pkt));
 
-  FireData packet;
-  memcpy(&packet, incomingData, sizeof(packet));
+    if (validate_packet(&pkt)) {
+      receivedFire = (pkt.fire == 1);
+      receivedAngle = pkt.angle;
+      receivedID = pkt.packetID;
+      receivedFireState = pkt.fireState;
+      receivedRiskScore = pkt.riskScore;
+      strncpy(receivedZone, pkt.zoneId, sizeof(receivedZone) - 1);
+      receivedZone[sizeof(receivedZone) - 1] = '\0';
+      lastPacketTime = millis();
+      packetAvailable = true;
+    }
+    return;
+  }
 
-  if (packet.header != 0xAA) return;
-
-  receivedFire = packet.fire;
-  receivedAngle = packet.angle;
-  receivedID = packet.packetID;
-  lastPacketTime = millis();
-  packetAvailable = true;
+  // 2. Legacy 7-byte fallback
+  if (len == sizeof(LegacyFireData)) {
+    LegacyFireData legacyPkt;
+    memcpy(&legacyPkt, incomingData, sizeof(legacyPkt));
+    if (legacyPkt.header == PACKET_HEADER_MAGIC) {
+      receivedFire = (legacyPkt.fire == 1);
+      receivedAngle = legacyPkt.angle;
+      receivedID = legacyPkt.packetID;
+      lastPacketTime = millis();
+      packetAvailable = true;
+    }
+  }
 }
 
-// =====================================================
-// SETUP
-// =====================================================
+// =====================================================================
+// 5. SETUP
+// =====================================================================
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(300);
+
+  Serial.println();
+  Serial.println(F("========================================"));
+  Serial.println(F(" FIRESHIELD AI — ESP2 RESPONDER NODE"));
+  Serial.println(F("========================================"));
 
   pinMode(RELAY_GPIO, OUTPUT);
   pinMode(BUZZER_GPIO, OUTPUT);
@@ -194,58 +194,49 @@ void setup() {
   extinguisherOFF();
 
   aimServo.attach(AIM_SERVO_GPIO);
-  aimServo.write(90);
-  currentServoAngle = 90;
-  delay(500);
+  aimServo.write(currentServoAngle);
+  delay(300);
 
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  wifi_set_channel(WIFI_CHANNEL);
 
-  Serial.println("\n================================");
-  Serial.println("SMART FIRE EXTINGUISHER ESP2");
-  Serial.println("================================");
-  Serial.print("ESP2 MAC: ");
+  Serial.print(F("ESP2 MAC Address: "));
   Serial.println(WiFi.macAddress());
 
-  wifi_set_channel(WIFI_CHANNEL);
-  Serial.print("Channel: ");
-  Serial.println(WIFI_CHANNEL);
-
   if (esp_now_init() != 0) {
-    Serial.println("ESP-NOW INIT FAILED");
-    extinguisherOFF();
-    while (true) delay(1000);
+    Serial.println(F("ESP-NOW init failed!"));
+    return;
   }
 
   esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
   esp_now_register_recv_cb(onDataReceive);
 
-  lastPacketTime = millis();
-  extinguisherOFF();
-
-  Serial.println("\nESP2 READY");
-  Serial.println("Waiting for ESP1...");
+  Serial.println(F("ESP-NOW Slave Listening for Fire Triggers..."));
+  Serial.println(F("========================================\n"));
 }
 
-// =====================================================
-// LOOP
-// =====================================================
+// =====================================================================
+// 6. MAIN LOOP
+// =====================================================================
 
 void loop() {
+  // Check if a packet was received
   if (packetAvailable) {
     packetAvailable = false;
 
     if (receivedFire) {
       extinguisherON(receivedAngle);
-      Serial.print("FIRE | RX Angle = ");
-      Serial.println(receivedAngle);
     } else {
       extinguisherOFF();
-      Serial.println("FIRE CLEARED");
+      aimAtFire(receivedAngle);
     }
   }
 
-  if (millis() - lastPacketTime > SIGNAL_TIMEOUT) {
-    receivedFire = false;
+  // Safety Watchdog: If no packets received within timeout, shut OFF actuator
+  if (millis() - lastPacketTime > SIGNAL_TIMEOUT_MS) {
     extinguisherOFF();
   }
+
+  delay(20);
 }
