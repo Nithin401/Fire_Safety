@@ -453,15 +453,19 @@ bool uploadOldestSample() {
     json.set("timestamp", String(s.uptimeMs));
   }
   json.set("device_id", DEVICE_ID);
+  json.set("room_id", ROOM_ID);
   json.set("experiment_id", EXPERIMENT_ID);
   json.set("temperature", s.temperature);
   json.set("humidity", s.humidity);
   json.set("pressure", s.pressure);
   json.set("flame_raw", s.flameRaw);
   json.set("flame_voltage", s.flameVoltage);
+  json.set("flame_volt", s.flameVoltage);
   json.set("gas_raw", s.gasRaw);
   json.set("gas_voltage", s.gasVoltage);
+  json.set("gas_volt", s.gasVoltage);
   json.set("fire_state", fireStateToStr(s.fireState));
+  json.set("label", fireStateToStr(s.fireState));
   json.set("servo_angle", s.servoAngle);
   json.set("sensors_valid", s.sensorsValid);
   json.set("uptime_ms", (double)s.uptimeMs);

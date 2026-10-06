@@ -23,6 +23,7 @@
 
 // Node Identification & Telemetry Metadata
 #define DEVICE_ID     "ESP1"
+#define ROOM_ID       "living_room"
 #define EXPERIMENT_ID "EXP001"
 
 #endif // FIREBASE_CONFIG_H
