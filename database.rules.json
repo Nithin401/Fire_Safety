@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "devices": {
+      "$deviceId": {
+        ".read": true,
+        ".write": "auth != null",
+        "readings": {
+          ".read": true,
+          ".write": "auth != null",
+          ".indexOn": ["timestamp"]
+        }
+      }
+    }
+  }
+}

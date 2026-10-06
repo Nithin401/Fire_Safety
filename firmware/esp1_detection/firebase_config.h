@@ -2,32 +2,27 @@
 #define FIREBASE_CONFIG_H
 
 // =====================================================================
-// FIRESHIELD AI — ESP8266 & MULTI-INTEGRATION HARDWARE CREDENTIALS
+// FIRESHIELD AI — ESP8266 HARDWARE & NETWORK CONFIGURATION
 // =====================================================================
 
-// Wi-Fi Access Point Credentials
+// 1. Wi-Fi Access Point Credentials (2.4 GHz only)
 #define WIFI_SSID     "YOUR_WIFI_NAME"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Firebase Realtime Database Host (WITHOUT "https://" and NO trailing slash)
+// 2. Firebase Realtime Database Configuration
+// Host WITHOUT "https://" and NO trailing slash:
 #define DATABASE_URL  "smart-fire-detection-272bb-default-rtdb.asia-southeast1.firebasedatabase.app"
 
-// Firebase Web API Key
+// Firebase Web API Key (Client-side identifier, safe for device client usage)
 #define API_KEY       "AIzaSyCxnGiInekI9FX6f7yUPuwxucYpHrUZWws"
 
 // Firebase Authentication Credentials
-// (Created in Firebase Console -> Authentication -> Users)
+// Change your password in Firebase Console -> Authentication -> Users if desired.
 #define USER_EMAIL    "esp1@smartfiredetection.local"
-#define USER_PASSWORD "Esp1SecurePass123"
-
-// Multi-Integration Local Backend Server (Python Hybrid AI Server)
-// Replace with your laptop/computer's local LAN IP address:
-#define BACKEND_SERVER_URL  "http://192.168.1.100:5000/api/v1/telemetry"
-#define DEVICE_API_KEY      "fireshield_local_dev_key_2026"
+#define USER_PASSWORD "YOUR_FIREBASE_AUTH_PASSWORD"
 
 // Node Identification & Telemetry Metadata
-#define DEVICE_ID           "ESP1"
-#define EXPERIMENT_ID       "EXP001"
-#define ROOM_ID             "Kitchen_Zone_A"
+#define DEVICE_ID     "ESP1"
+#define EXPERIMENT_ID "EXP001"
 
 #endif // FIREBASE_CONFIG_H
