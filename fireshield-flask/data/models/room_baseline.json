@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "room_name": "Test Lab",
+  "trained_at": "2026-10-18T11:59:39.693784+00:00",
+  "time_range": {
+    "start": "2026-10-18T12:00:00+00:00",
+    "end": "2026-10-18T12:05:04+00:00"
+  },
+  "observations": {
+    "total_rows": 20,
+    "valid_temperatures": 20,
+    "valid_humidities": 20
+  },
+  "temperature_baseline": {
+    "mean": 25.0,
+    "median": 25.0,
+    "std": 0.73,
+    "min": 24.0,
+    "max": 26.0,
+    "percentiles": {
+      "p05": 24.0,
+      "p25": 24.5,
+      "p75": 25.5,
+      "p95": 26.0
+    },
+    "normal_band_2sigma": [
+      24.0,
+      26.0
+    ]
+  },
+  "humidity_baseline": {
+    "mean": 50.0,
+    "median": 50.0,
+    "std": 1.45,
+    "min": 48.0,
+    "max": 52.0
+  },
+  "hourly_pattern": {
+    "12": {
+      "mean_temp": 25.0,
+      "std_temp": 0.73,
+      "count": 20
+    }
+  },
+  "disclaimer": "Anomalies indicate environmental deviation from learned baseline, NOT confirmed fire. Weather, occupancy, doors, or appliances routinely alter room baseline."
+}

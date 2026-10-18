@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - FireShield AI{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1 style="font-size: 1.75rem; font-weight: 700;">Live Sensor Telemetry</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Direct ThingSpeak Channel Feed &bull; Channel ID: <strong>{{ channel_id or 'Not Configured' }}</strong>
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.75rem; align-items: center;">
+    <button onclick="location.reload()" class="btn btn-secondary">↻ Refresh Data</button>
+  </div>
+</div>
+
+{% if not is_configured %}
+<div class="alert-banner warning">
+  <div>
+    <strong>⚠️ Channel ID Not Configured</strong>
+    <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+      Set <code>THINGSPEAK_CHANNEL_ID</code> in <code>fireshield-flask/.env</code> (or root <code>secrets/.env</code>) to fetch live readings from your ESP8266 transmitter.
+    </p>
+  </div>
+</div>
+{% elif error %}
+<div class="alert-banner warning">
+  <div>
+    <strong>Connection Notice:</strong> {{ error }}
+  </div>
+</div>
+{% endif %}
+
+{% if reading %}
+  {% if reading.fire_status == 1 %}
+    <div class="alert-banner danger">
+      <div>
+        <strong style="font-size: 1.1rem;">🚨 HARDWARE FIRE RULE TRIGGERED (field6 = 1)</strong>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+          Optical Flame or Smoke digital sensor triggered local hardware threshold.
+          Flame Raw: {{ reading.flame_raw }}, Smoke: {{ 'DETECTED' if reading.smoke_status == 1 else 'NOT DETECTED' }}, Time: {{ reading.created_at }}.
+        </p>
+      </div>
+      <span class="badge badge-danger">HARDWARE ALARM</span>
+    </div>
+  {% elif reading.is_stale %}
+    <div class="alert-banner warning">
+      <div>
+        <strong>⚠️ Data is Stale</strong>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+          Last reading was received {{ reading.age_seconds }} seconds ago (threshold is {{ stale_threshold }}s).
+          ESP8266 transmitter may be offline or Wi-Fi disconnected.
+        </p>
+      </div>
+      <span class="badge badge-warning">STALE TELEMETRY</span>
+    </div>
+  {% else %}
+    <div class="alert-banner info">
+      <div>
+        <strong>🟢 Live Hardware Normal (field6 = 0)</strong>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+          Hardware fire rule is clear. Telemetry freshness: {{ reading.age_seconds }}s ago.
+        </p>
+      </div>
+      <span class="badge badge-success">ONLINE & FRESH</span>
+    </div>
+  {% endif %}
+
+  <!-- 6-Field Telemetry Grid -->
+  <div class="grid-4">
+    <!-- Field 1: Flame -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">1. Flame Sensor (A0)</span>
+        <span class="badge {{ 'badge-danger' if reading.flame_raw is not none and reading.flame_raw < 600 else 'badge-success' }}">
+          {{ 'FLAME DETECTED' if reading.flame_raw is not none and reading.flame_raw < 600 else 'NORMAL' }}
+        </span>
+      </div>
+      <div class="metric-value">
+        {{ reading.flame_raw if reading.flame_raw is not none else 'N/A' }}
+      </div>
+      <div class="metric-unit">Raw Analog Reading (threshold: &lt; 600)</div>
+    </div>
+
+    <!-- Field 2: Smoke -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">2. Smoke Status (GPIO12)</span>
+        <span class="badge {{ 'badge-danger' if reading.smoke_status == 1 else 'badge-success' }}">
+          {{ 'SMOKE ACTIVE' if reading.smoke_status == 1 else 'CLEAR' }}
+        </span>
+      </div>
+      <div class="metric-value">
+        {% if reading.smoke_status == 1 %}
+          DETECTED
+        {% elif reading.smoke_status == 0 %}
+          CLEAR
+        {% else %}
+          N/A
+        {% endif %}
+      </div>
+      <div class="metric-unit">Digital DO (1 = Smoke, 0 = Clean)</div>
+    </div>
+
+    <!-- Field 3: Temperature -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">3. Temperature (DHT11)</span>
+        <span class="badge badge-muted">AMBIENT</span>
+      </div>
+      <div class="metric-value">
+        {{ reading.temperature_c if reading.temperature_c is not none else 'N/A' }}
+        <span class="metric-unit">&deg;C</span>
+      </div>
+      <div class="metric-unit">
+        {% if baseline and baseline.temperature_baseline %}
+          Learned Normal: {{ baseline.temperature_baseline.mean }} &deg;C (&plusmn;{{ baseline.temperature_baseline.std }})
+        {% else %}
+          Ambient room reading
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Field 4: Humidity -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">4. Humidity (DHT11)</span>
+        <span class="badge badge-muted">RELATIVE</span>
+      </div>
+      <div class="metric-value">
+        {{ reading.humidity_pct if reading.humidity_pct is not none else 'N/A' }}
+        <span class="metric-unit">%</span>
+      </div>
+      <div class="metric-unit">DHT11 Relative Humidity</div>
+    </div>
+
+    <!-- Field 5: Servo Angle -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">5. Servo Angle (GPIO14)</span>
+        <span class="badge badge-muted">MECHANICAL</span>
+      </div>
+      <div class="metric-value">
+        {{ reading.servo_angle if reading.servo_angle is not none else 'N/A' }}
+        <span class="metric-unit">&deg;</span>
+      </div>
+      <div class="metric-unit">Current Scanner / Aim Angle</div>
+    </div>
+
+    <!-- Field 6: Fire Status -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">6. Hardware Fire Status</span>
+        <span class="badge {{ 'badge-danger' if reading.fire_status == 1 else ('badge-success' if reading.fire_status == 0 else 'badge-muted') }}">
+          {{ reading.fire_label }}
+        </span>
+      </div>
+      <div class="metric-value">
+        {{ reading.fire_status if reading.fire_status is not none else 'N/A' }}
+      </div>
+      <div class="metric-unit">1 = Rule Triggered, 0 = Clear</div>
+    </div>
+  </div>
+
+  <!-- Telemetry Metadata Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Telemetry Record Freshness & Metadata</span>
+      <span class="badge badge-muted">Entry #{{ reading.entry_id }}</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; font-size: 0.9rem;">
+      <div>
+        <p style="color: var(--text-muted);">Timestamp (UTC)</p>
+        <p style="font-weight: 600;">{{ reading.created_at or 'Unavailable' }}</p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">Age</p>
+        <p style="font-weight: 600;">{{ reading.age_seconds }} seconds ago</p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">Freshness State</p>
+        <p style="font-weight: 600; color: {{ 'var(--warning)' if reading.is_stale else 'var(--success)' }};">
+          {{ 'STALE (> ' ~ stale_threshold ~ 's)' if reading.is_stale else 'LIVE' }}
+        </p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">Cached Feeds in Memory</p>
+        <p style="font-weight: 600;">{{ feed_count }} records</p>
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <div class="card" style="text-align: center; padding: 3rem;">
+    <h3 style="margin-bottom: 0.5rem;">No Telemetry Records Available</h3>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
+      ThingSpeak channel has no records yet, or the credentials need to be configured in <code>.env</code>.
+    </p>
+    <a href="{{ url_for('export.history_page') }}" class="btn btn-secondary">Upload CSV for Offline Analysis</a>
+  </div>
+{% endif %}
+{% endblock %}

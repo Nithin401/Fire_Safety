@@ -1,0 +1,18 @@
+{
+  "folders": [
+    {
+      "name": "Fire Safety Hardware",
+      "path": "."
+    },
+    {
+      "name": "FireShield AI App",
+      "path": "_external_FireShieldAI"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.pio": true,
+      "**/__pycache__": true
+    }
+  }
+}

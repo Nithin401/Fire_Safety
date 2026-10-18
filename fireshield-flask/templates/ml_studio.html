@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}ML Studio - FireShield AI{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1 style="font-size: 1.75rem; font-weight: 700;">Machine Learning Training Studio</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Dataset inspection &bull; Ground-truth label verification &bull; Supervised model experimentation
+    </p>
+  </div>
+</div>
+
+<!-- Strict Ethics / Scientific Safeguards Banner -->
+<div class="alert-banner warning" style="border-left: 4px solid var(--warning);">
+  <div>
+    <strong>⚠️ Strict Scientific & Safety Rules for FireShield AI ML</strong>
+    <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+      1. <strong>Field6 is not Ground Truth</strong>: <code>field6</code> indicates the local ESP8266 hardware rule triggered state, not verified fire reality.<br>
+      2. <strong>No Fabricated Accuracy</strong>: Models cannot be evaluated without human-verified positive and negative label ground truth.<br>
+      3. <strong>Hardware Alarm Priority</strong>: Experimental ML risk predictions must never suppress the deterministic hardware backstop.
+    </p>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert-banner danger">
+  <strong>Training Safeguard Triggered:</strong> {{ error }}
+</div>
+{% endif %}
+
+<!-- Dataset Readiness Inspection -->
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <span class="card-title">Current Telemetry Dataset Readiness</span>
+    <span class="badge {{ 'badge-success' if data_summary.ready_for_supervised_training else 'badge-warning' }}">
+      {{ 'READY FOR TRAINING' if data_summary.ready_for_supervised_training else 'LABELS REQUIRED' }}
+    </span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+    <div>
+      <p style="color: var(--text-muted);">Total Rows Analyzed</p>
+      <p style="font-weight: 600; font-size: 1.25rem;">{{ data_summary.total_rows }}</p>
+    </div>
+    <div>
+      <p style="color: var(--text-muted);">Verified Label Column</p>
+      <p style="font-weight: 600; font-size: 1.1rem;">
+        {{ data_summary.label_column if data_summary.has_verified_labels else 'None Found' }}
+      </p>
+    </div>
+    <div>
+      <p style="color: var(--text-muted);">Hardware Rule (field6) Distribution</p>
+      <p style="font-weight: 600;">{{ data_summary.hardware_fire_distribution or 'No field6 data' }}</p>
+    </div>
+  </div>
+
+  <!-- Columns Breakdown -->
+  <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Columns &amp; Missing Rates</h4>
+  <div class="table-container" style="margin-bottom: 1.5rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Column Name</th>
+          <th>Data Type</th>
+          <th>Missing Count</th>
+          <th>Missing %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for col_name, info in data_summary.columns.items() %}
+        <tr>
+          <td><strong>{{ col_name }}</strong></td>
+          <td><code>{{ info.dtype }}</code></td>
+          <td>{{ info.missing_count }}</td>
+          <td>{{ info.missing_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Supervised Training Form -->
+  <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Supervised Model Training Controls</h4>
+  <form method="POST" action="{{ url_for('models.ml_studio') }}">
+    <input type="hidden" name="action" value="train">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+      <div class="form-group">
+        <label>Model Architecture</label>
+        <select name="model_type">
+          <option value="random_forest">Random Forest Classifier (50 Trees)</option>
+          <option value="logistic_regression">Logistic Regression (L2 Regularized)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Verified Ground-Truth Label Column</label>
+        <input type="text" name="label_col" value="verified_label" placeholder="e.g. verified_label">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Feature Columns (Select all that apply)</label>
+      <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal; color: #fff;">
+          <input type="checkbox" name="features" value="flame_raw" checked style="width: auto;"> Flame A0
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal; color: #fff;">
+          <input type="checkbox" name="features" value="smoke_status" checked style="width: auto;"> Smoke DO
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal; color: #fff;">
+          <input type="checkbox" name="features" value="temperature_c" checked style="width: auto;"> Temperature °C
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal; color: #fff;">
+          <input type="checkbox" name="features" value="humidity_pct" checked style="width: auto;"> Humidity %
+        </label>
+      </div>
+    </div>
+
+    <button type="submit" class="btn">Train Supervised Model</button>
+  </form>
+</div>
+
+<!-- Evaluation Results if trained -->
+{% if training_result and training_result.success %}
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <span class="card-title">Training Evaluation Results</span>
+    <span class="badge badge-success">{{ training_result.model_type|upper }}</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div>
+      <p style="color: var(--text-muted);">Model Saved File</p>
+      <p style="font-weight: 600;"><code>{{ training_result.model_file }}</code></p>
+    </div>
+    <div>
+      <p style="color: var(--text-muted);">Train / Test Split</p>
+      <p style="font-weight: 600;">{{ training_result.train_samples }} / {{ training_result.test_samples }} samples</p>
+    </div>
+  </div>
+
+  <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Per-Class Precision, Recall, and F1</h4>
+  <div class="table-container" style="margin-bottom: 1.5rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Class Label</th>
+          <th>Precision</th>
+          <th>Recall</th>
+          <th>F1-Score</th>
+          <th>Support (Test)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lbl, met in training_result.metrics_per_class.items() %}
+        <tr>
+          <td><strong>{{ lbl }}</strong></td>
+          <td>{{ met.precision }}</td>
+          <td>{{ met.recall }}</td>
+          <td>{{ met.f1_score }}</td>
+          <td>{{ met.support }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Confusion Matrix</h4>
+  <pre style="background: #0f172a; padding: 1rem; border-radius: 6px; font-size: 0.9rem;">Labels: {{ training_result.labels }}
+Matrix: {{ training_result.confusion_matrix }}</pre>
+</div>
+{% endif %}
+
+<!-- Model Registry -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Saved Model Registry</span>
+    <span class="badge badge-muted">{{ models|length }} Models</span>
+  </div>
+  {% if models %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Model Type</th>
+            <th>Trained At</th>
+            <th>Saved File</th>
+            <th>Features</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in models %}
+          <tr>
+            <td><strong>{{ m.model_type }}</strong></td>
+            <td>{{ m.trained_at[:19] }}Z</td>
+            <td><code>{{ m.model_file }}</code></td>
+            <td>{{ m.features|join(', ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p style="color: var(--text-muted); font-size: 0.9rem;">No supervised models trained yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

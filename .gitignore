@@ -3,6 +3,11 @@
 *.env
 serviceAccountKey.json
 secrets.h
+secrets/.env
+secrets/service-account.json
+**/secrets.h
+serviceAccount*.json
+*-firebase-adminsdk-*.json
 
 # Python
 __pycache__/
@@ -24,3 +29,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Sub-repositories
+_external_FireShieldAI/

@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}History & CSV Export - FireShield AI{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1 style="font-size: 1.75rem; font-weight: 700;">Historical Records & CSV Export</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Raw ThingSpeak schema &amp; normalized sensor telemetry &bull; {{ feeds|length }} rows displayed
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.75rem;">
+    <a href="{{ url_for('export.export_raw_csv', limit=limit) }}" class="btn btn-secondary">⬇ Download Raw CSV</a>
+    <a href="{{ url_for('export.export_processed_csv', limit=limit) }}" class="btn">⬇ Download Processed CSV</a>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="card" style="margin-bottom: 1.5rem; padding: 1rem 1.5rem;">
+  <form method="GET" action="{{ url_for('export.history_page') }}" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <label for="limit" style="margin: 0;">Limit:</label>
+      <select name="limit" id="limit" style="width: auto; padding: 0.4rem 0.6rem;">
+        <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+        <option value="200" {% if limit == 200 %}selected{% endif %}>200</option>
+        <option value="500" {% if limit == 500 %}selected{% endif %}>500</option>
+      </select>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <label for="fire_status" style="margin: 0;">Hardware Status:</label>
+      <select name="fire_status" id="fire_status" style="width: auto; padding: 0.4rem 0.6rem;">
+        <option value="" {% if not fire_filter %}selected{% endif %}>All Records</option>
+        <option value="0" {% if fire_filter == '0' %}selected{% endif %}>0 (Rule Clear)</option>
+        <option value="1" {% if fire_filter == '1' %}selected{% endif %}>1 (Rule Triggered)</option>
+      </select>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <label for="view" style="margin: 0;">View Schema:</label>
+      <select name="view" id="view" style="width: auto; padding: 0.4rem 0.6rem;">
+        <option value="processed" {% if view_mode == 'processed' %}selected{% endif %}>Processed Columns</option>
+        <option value="raw" {% if view_mode == 'raw' %}selected{% endif %}>Raw ThingSpeak (field1..6)</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-secondary">Apply Filters</button>
+  </form>
+</div>
+
+<!-- Data Table -->
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <span class="card-title">Telemetry Feed Data</span>
+    <span class="badge badge-muted">{{ view_mode|upper }} SCHEMA</span>
+  </div>
+
+  <div class="table-container">
+    {% if view_mode == 'raw' %}
+      <table>
+        <thead>
+          <tr>
+            <th>Entry ID</th>
+            <th>Created At</th>
+            <th>field1 (Flame)</th>
+            <th>field2 (Smoke)</th>
+            <th>field3 (Temp)</th>
+            <th>field4 (Hum)</th>
+            <th>field5 (Servo)</th>
+            <th>field6 (Fire)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in feeds %}
+          <tr>
+            <td><strong>#{{ r.entry_id }}</strong></td>
+            <td>{{ r.created_at }}</td>
+            <td>{{ r.field1 }}</td>
+            <td>{{ r.field2 }}</td>
+            <td>{{ r.field3 }}</td>
+            <td>{{ r.field4 }}</td>
+            <td>{{ r.field5 }}</td>
+            <td>
+              <span class="badge {{ 'badge-danger' if r.field6|string == '1' else 'badge-success' }}">
+                {{ r.field6 }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No records found matching query.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>Entry</th>
+            <th>Timestamp (UTC)</th>
+            <th>Flame A0</th>
+            <th>Smoke DO</th>
+            <th>Temperature</th>
+            <th>Humidity</th>
+            <th>Servo Angle</th>
+            <th>Fire Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in feeds %}
+          <tr>
+            <td><strong>#{{ r.entry_id }}</strong></td>
+            <td>{{ r.created_at }}</td>
+            <td>{{ r.flame_raw if r.flame_raw is not none else '-' }}</td>
+            <td>{{ 'DETECTED (1)' if r.smoke_status == 1 else ('CLEAR (0)' if r.smoke_status == 0 else '-') }}</td>
+            <td>{{ r.temperature_c if r.temperature_c is not none else '-' }} &deg;C</td>
+            <td>{{ r.humidity_pct if r.humidity_pct is not none else '-' }} %</td>
+            <td>{{ r.servo_angle if r.servo_angle is not none else '-' }}&deg;</td>
+            <td>
+              <span class="badge {{ 'badge-danger' if r.fire_status == 1 else ('badge-success' if r.fire_status == 0 else 'badge-muted') }}">
+                {{ r.fire_label }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No records found matching query.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Offline CSV Upload Inspection -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Offline CSV Inspection</span>
+    <span class="badge badge-muted">Client-Safe Upload</span>
+  </div>
+  <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+    Upload a previously exported ThingSpeak or sensor dataset to inspect missing values and statistics without cloud upload.
+  </p>
+  <div style="display: flex; gap: 1rem; align-items: center;">
+    <input type="file" id="csv-file-input" accept=".csv" style="max-width: 350px;">
+    <button onclick="uploadOfflineCSV()" class="btn btn-secondary">Inspect CSV</button>
+  </div>
+  <div id="upload-result" style="margin-top: 1.5rem; display: none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function uploadOfflineCSV() {
+    const input = document.getElementById('csv-file-input');
+    const resultDiv = document.getElementById('upload-result');
+    if (!input.files || input.files.length === 0) {
+      alert("Please select a .csv file first.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", input.files[0]);
+
+    resultDiv.style.display = "block";
+    resultDiv.innerHTML = "<p style='color: var(--text-muted);'>Inspecting CSV...</p>";
+
+    try {
+      const res = await fetch("{{ url_for('export.upload_csv') }}", {
+        method: "POST",
+        body: formData
+      });
+      const data = await res.json();
+      if (!data.success) {
+        resultDiv.innerHTML = `<div class="alert-banner warning"><strong>Error:</strong> ${data.error}</div>`;
+        return;
+      }
+
+      resultDiv.innerHTML = `
+        <div class="alert-banner info">
+          <strong>CSV Inspected:</strong> ${data.row_count} rows &bull; Columns: ${data.columns.join(", ")}
+        </div>
+        <div style="margin-top: 1rem;">
+          <h4 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">Missing Value Breakdown:</h4>
+          <pre style="background: #0f172a; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem;">${JSON.stringify(data.missing_summary, null, 2)}</pre>
+        </div>
+      `;
+    } catch (e) {
+      resultDiv.innerHTML = `<div class="alert-banner danger"><strong>Error:</strong> ${e.message}</div>`;
+    }
+  }
+</script>
+{% endblock %}

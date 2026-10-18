@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}FireShield AI - ThingSpeak Ops Portal{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar">
+    <a href="{{ url_for('dashboard.overview') }}" class="brand">
+      <span class="brand-icon">🔥</span>
+      <span>FireShield AI</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('dashboard.overview') }}">Overview</a></li>
+      <li><a href="{{ url_for('dashboard.graphs') }}">Sensors (6 Graphs)</a></li>
+      <li><a href="{{ url_for('export.history_page') }}">History & CSV</a></li>
+      <li><a href="{{ url_for('dashboard.baseline_page') }}">Room Baseline</a></li>
+      <li><a href="{{ url_for('models.ml_studio') }}">ML Studio</a></li>
+      <li><a href="{{ url_for('api.health') }}" target="_blank">API Status</a></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <p>FireShield AI Prototype &bull; ThingSpeak &bull; Python Flask &bull; Flutter App Integration &bull; Not a Certified Life-Safety System</p>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

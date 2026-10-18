@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Room Baseline Learning - FireShield AI{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1 style="font-size: 1.75rem; font-weight: 700;">Room Baseline Environmental Learning</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Learns normal room temperature and humidity behavior &bull; Identifies statistical deviations
+    </p>
+  </div>
+  <div>
+    <form method="POST" action="{{ url_for('dashboard.baseline_page') }}" style="display: flex; gap: 0.5rem;">
+      <input type="text" name="room_name" value="Living Room" style="width: 140px; padding: 0.4rem 0.6rem;">
+      <button type="submit" class="btn">⚡ Retrain Baseline</button>
+    </form>
+  </div>
+</div>
+
+{% if message %}
+<div class="alert-banner info">
+  <strong>Success:</strong> {{ message }}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert-banner warning">
+  <strong>Notice:</strong> {{ error }}
+</div>
+{% endif %}
+
+<!-- Safety Disclaimer Banner -->
+<div class="alert-banner warning" style="border-left: 4px solid var(--warning);">
+  <div>
+    <strong>⚠️ Important Safety Notice on Anomaly Detection</strong>
+    <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+      A baseline anomaly represents statistical variation from past room behavior (e.g., direct sunlight, room occupancy, seasonal shifts, open doors, heaters), <strong>NOT confirmed fire</strong>.
+      Baseline learning must never replace or suppress the deterministic hardware detector.
+    </p>
+  </div>
+</div>
+
+{% if baseline and baseline.temperature_baseline %}
+  <!-- Baseline Metrics Grid -->
+  <div class="grid-4">
+    <!-- Mean Temp -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Mean Temperature</span>
+        <span class="badge badge-success">&mu; NORMAL</span>
+      </div>
+      <div class="metric-value">
+        {{ baseline.temperature_baseline.mean }}<span class="metric-unit">&deg;C</span>
+      </div>
+      <div class="metric-unit">Std Dev: &plusmn;{{ baseline.temperature_baseline.std }} &deg;C</div>
+    </div>
+
+    <!-- Median Temp -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Median &amp; Percentiles</span>
+        <span class="badge badge-muted">P50</span>
+      </div>
+      <div class="metric-value">
+        {{ baseline.temperature_baseline.median }}<span class="metric-unit">&deg;C</span>
+      </div>
+      <div class="metric-unit">
+        P05: {{ baseline.temperature_baseline.percentiles.p05 }}&deg;C &bull; P95: {{ baseline.temperature_baseline.percentiles.p95 }}&deg;C
+      </div>
+    </div>
+
+    <!-- Observed Range -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Observed Temp Range</span>
+        <span class="badge badge-muted">MIN / MAX</span>
+      </div>
+      <div class="metric-value" style="font-size: 1.8rem;">
+        {{ baseline.temperature_baseline.min }}&deg; - {{ baseline.temperature_baseline.max }}&deg;C
+      </div>
+      <div class="metric-unit">
+        2&sigma; Band: [{{ baseline.temperature_baseline.normal_band_2sigma[0] }}&deg;C, {{ baseline.temperature_baseline.normal_band_2sigma[1] }}&deg;C]
+      </div>
+    </div>
+
+    <!-- Humidity Baseline -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Mean Humidity</span>
+        <span class="badge badge-muted">RH %</span>
+      </div>
+      <div class="metric-value">
+        {{ baseline.humidity_baseline.mean if baseline.humidity_baseline.mean is not none else 'N/A' }}<span class="metric-unit">%</span>
+      </div>
+      <div class="metric-unit">
+        Std Dev: &plusmn;{{ baseline.humidity_baseline.std if baseline.humidity_baseline.std is not none else '0' }}%
+      </div>
+    </div>
+  </div>
+
+  <!-- Baseline Plot with Variability Bands & Anomalies -->
+  <div class="card" style="margin-bottom: 2rem;">
+    <div class="card-header">
+      <span class="card-title">Actual Temperature vs. Learned Baseline Band (&plusmn;2&sigma;)</span>
+      <span class="badge badge-muted">{{ baseline.room_name }}</span>
+    </div>
+    <div id="chart-baseline" style="height: 350px;"></div>
+  </div>
+
+  <!-- Training Metadata Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Learned Model Metadata</span>
+      <span class="badge badge-muted">Trained {{ baseline.trained_at[:19] }}Z</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; font-size: 0.9rem;">
+      <div>
+        <p style="color: var(--text-muted);">Room Target</p>
+        <p style="font-weight: 600;">{{ baseline.room_name }}</p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">Observations Analyzed</p>
+        <p style="font-weight: 600;">{{ baseline.observations.valid_temperatures }} usable readings</p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">Start Timestamp</p>
+        <p style="font-weight: 600;">{{ baseline.time_range.start or 'N/A' }}</p>
+      </div>
+      <div>
+        <p style="color: var(--text-muted);">End Timestamp</p>
+        <p style="font-weight: 600;">{{ baseline.time_range.end or 'N/A' }}</p>
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <div class="card" style="text-align: center; padding: 3rem;">
+    <h3>No Room Baseline Trained Yet</h3>
+    <p style="color: var(--text-muted); margin: 0.75rem 0 1.5rem 0;">
+      A baseline model calculates normal ambient temperature distribution and variability bands from actual ThingSpeak telemetry.
+    </p>
+    <form method="POST" action="{{ url_for('dashboard.baseline_page') }}" style="display: inline-block;">
+      <input type="hidden" name="room_name" value="Living Room">
+      <button type="submit" class="btn">Train Baseline on Current Feeds</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if baseline and baseline.temperature_baseline and feeds %}
+<script>
+  const feeds = {{ feeds|tojson }};
+  const timestamps = feeds.map(f => f.created_at);
+  const actualTemps = feeds.map(f => f.temperature_c);
+  
+  const meanTemp = {{ baseline.temperature_baseline.mean }};
+  const stdTemp = {{ baseline.temperature_baseline.std }};
+  const upperBand = meanTemp + 2 * stdTemp;
+  const lowerBand = meanTemp - 2 * stdTemp;
+
+  const baselineLine = timestamps.map(() => meanTemp);
+  const upperLine = timestamps.map(() => upperBand);
+  const lowerLine = timestamps.map(() => lowerBand);
+
+  // Identify anomalies
+  const anomalyX = [];
+  const anomalyY = [];
+  feeds.forEach(f => {
+    if (f.temperature_c !== null && (f.temperature_c > upperBand || f.temperature_c < lowerBand)) {
+      anomalyX.push(f.created_at);
+      anomalyY.push(f.temperature_c);
+    }
+  });
+
+  const traces = [
+    // Upper Band
+    {
+      x: timestamps,
+      y: upperLine,
+      mode: 'lines',
+      line: { color: 'rgba(56, 189, 248, 0.2)', width: 1 },
+      showlegend: false,
+      hoverinfo: 'none'
+    },
+    // Lower Band with fill to upper
+    {
+      x: timestamps,
+      y: lowerLine,
+      mode: 'lines',
+      fill: 'tonexty',
+      fillcolor: 'rgba(56, 189, 248, 0.08)',
+      line: { color: 'rgba(56, 189, 248, 0.2)', width: 1 },
+      name: '2σ Normal Band'
+    },
+    // Mean Baseline
+    {
+      x: timestamps,
+      y: baselineLine,
+      mode: 'lines',
+      line: { color: '#38bdf8', width: 2, dash: 'dot' },
+      name: 'Learned Mean (' + meanTemp + '°C)'
+    },
+    // Actual Readings
+    {
+      x: timestamps,
+      y: actualTemps,
+      mode: 'lines+markers',
+      line: { color: '#f8fafc', width: 2 },
+      marker: { size: 4 },
+      name: 'Actual DHT11 Temp'
+    },
+    // Anomalies
+    {
+      x: anomalyX,
+      y: anomalyY,
+      mode: 'markers',
+      marker: { color: '#ef4444', size: 9, symbol: 'diamond' },
+      name: 'Environmental Anomaly (>2σ)'
+    }
+  ];
+
+  Plotly.newPlot('chart-baseline', traces, {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: '#94a3b8', size: 11 },
+    margin: { t: 20, r: 20, l: 45, b: 35 },
+    xaxis: { gridcolor: '#334155', linecolor: '#334155' },
+    yaxis: { gridcolor: '#334155', linecolor: '#334155', title: '°C' },
+    legend: { orientation: 'h', y: -0.2 }
+  }, { responsive: true, displayModeBar: false });
+</script>
+{% endif %}
+{% endblock %}

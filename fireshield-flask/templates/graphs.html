@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Sensor Graphs - FireShield AI{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1 style="font-size: 1.75rem; font-weight: 700;">Sensor Time-Series Telemetry</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Six Separate Historical Feeds &bull; Showing {{ feeds|length }} data points &bull; Gaps represent missing readings
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.75rem; align-items: center;">
+    <form method="GET" action="{{ url_for('dashboard.graphs') }}" style="display: flex; gap: 0.5rem; align-items: center;">
+      <label for="limit" style="margin-bottom: 0; font-size: 0.85rem;">History Range:</label>
+      <select name="limit" id="limit" onchange="this.form.submit()" style="width: auto; padding: 0.4rem 0.75rem;">
+        <option value="50" {% if limit == 50 %}selected{% endif %}>Last 50</option>
+        <option value="100" {% if limit == 100 %}selected{% endif %}>Last 100</option>
+        <option value="200" {% if limit == 200 %}selected{% endif %}>Last 200</option>
+        <option value="500" {% if limit == 500 %}selected{% endif %}>Last 500</option>
+      </select>
+    </form>
+    <button onclick="location.reload()" class="btn btn-secondary">↻ Refresh</button>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert-banner warning">
+  <strong>Notice:</strong> {{ error }}
+</div>
+{% endif %}
+
+{% if not feeds %}
+<div class="card" style="text-align: center; padding: 3rem;">
+  <h3>No Data Points to Graph</h3>
+  <p style="color: var(--text-muted); margin-top: 0.5rem;">
+    Waiting for readings on ThingSpeak channel or check your <code>.env</code> settings.
+  </p>
+</div>
+{% else %}
+
+<div class="grid-2">
+  <!-- 1. Flame Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">1. FLAME SENSOR (A0 RAW)</span>
+      <span class="badge badge-muted">Threshold: 600</span>
+    </div>
+    <div id="chart-flame" style="height: 280px;"></div>
+  </div>
+
+  <!-- 2. Smoke Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">2. SMOKE SENSOR (0/1 DIGITAL)</span>
+      <span class="badge badge-muted">1 = Smoke, 0 = Clean</span>
+    </div>
+    <div id="chart-smoke" style="height: 280px;"></div>
+  </div>
+
+  <!-- 3. Temperature Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">3. TEMPERATURE (&deg;C DHT11)</span>
+      <span class="badge badge-muted">Degrees Celsius</span>
+    </div>
+    <div id="chart-temp" style="height: 280px;"></div>
+  </div>
+
+  <!-- 4. Humidity Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">4. HUMIDITY (% DHT11)</span>
+      <span class="badge badge-muted">Relative %</span>
+    </div>
+    <div id="chart-hum" style="height: 280px;"></div>
+  </div>
+
+  <!-- 5. Servo Angle Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">5. SERVO ANGLE (0&deg; - 180&deg;)</span>
+      <span class="badge badge-muted">Scanner / Aim Angle</span>
+    </div>
+    <div id="chart-servo" style="height: 280px;"></div>
+  </div>
+
+  <!-- 6. Hardware Fire Status Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">6. HARDWARE FIRE STATUS (0/1)</span>
+      <span class="badge badge-danger">1 = Triggered, 0 = Clear</span>
+    </div>
+    <div id="chart-fire" style="height: 280px;"></div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if feeds %}
+<script>
+  const feedsData = {{ feeds|tojson }};
+  const timestamps = feedsData.map(f => f.created_at);
+  const flameVals = feedsData.map(f => f.flame_raw);
+  const smokeVals = feedsData.map(f => f.smoke_status);
+  const tempVals = feedsData.map(f => f.temperature_c);
+  const humVals = feedsData.map(f => f.humidity_pct);
+  const servoVals = feedsData.map(f => f.servo_angle);
+  const fireVals = feedsData.map(f => f.fire_status);
+
+  const darkLayout = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: '#94a3b8', size: 11 },
+    margin: { t: 20, r: 20, l: 45, b: 35 },
+    xaxis: { gridcolor: '#334155', linecolor: '#334155' },
+    yaxis: { gridcolor: '#334155', linecolor: '#334155' }
+  };
+
+  // 1. Flame Plot
+  Plotly.newPlot('chart-flame', [{
+    x: timestamps,
+    y: flameVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#f59e0b', width: 2 },
+    marker: { size: 4 }
+  }], {
+    ...darkLayout,
+    shapes: [{
+      type: 'line',
+      xref: 'paper',
+      x0: 0,
+      x1: 1,
+      y0: 600,
+      y1: 600,
+      line: { color: '#ef4444', width: 1.5, dash: 'dash' }
+    }]
+  }, { responsive: true, displayModeBar: false });
+
+  // 2. Smoke Plot
+  Plotly.newPlot('chart-smoke', [{
+    x: timestamps,
+    y: smokeVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#64748b', width: 2, shape: 'hv' },
+    marker: { size: 5 }
+  }], {
+    ...darkLayout,
+    yaxis: { ...darkLayout.yaxis, tickvals: [0, 1], ticktext: ['0 (Clear)', '1 (Smoke)'], range: [-0.2, 1.2] }
+  }, { responsive: true, displayModeBar: false });
+
+  // 3. Temp Plot
+  Plotly.newPlot('chart-temp', [{
+    x: timestamps,
+    y: tempVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#38bdf8', width: 2 },
+    marker: { size: 4 }
+  }], darkLayout, { responsive: true, displayModeBar: false });
+
+  // 4. Humidity Plot
+  Plotly.newPlot('chart-hum', [{
+    x: timestamps,
+    y: humVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#06b6d4', width: 2 },
+    marker: { size: 4 }
+  }], darkLayout, { responsive: true, displayModeBar: false });
+
+  // 5. Servo Plot
+  Plotly.newPlot('chart-servo', [{
+    x: timestamps,
+    y: servoVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#a855f7', width: 2 },
+    marker: { size: 4 }
+  }], {
+    ...darkLayout,
+    yaxis: { ...darkLayout.yaxis, range: [0, 180] }
+  }, { responsive: true, displayModeBar: false });
+
+  // 6. Fire Status Plot
+  Plotly.newPlot('chart-fire', [{
+    x: timestamps,
+    y: fireVals,
+    type: 'scatter',
+    mode: 'lines+markers',
+    connectgaps: false,
+    line: { color: '#ef4444', width: 2, shape: 'hv' },
+    marker: { size: 5 }
+  }], {
+    ...darkLayout,
+    yaxis: { ...darkLayout.yaxis, tickvals: [0, 1], ticktext: ['0 (Clear)', '1 (FIRE)'], range: [-0.2, 1.2] }
+  }, { responsive: true, displayModeBar: false });
+</script>
+{% endif %}
+{% endblock %}
