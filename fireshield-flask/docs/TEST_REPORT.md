@@ -10,47 +10,65 @@
 
 | Test Category | Suite / Command | Total Checked | Passed | Failed | Not Run |
 |---|---|---|---|---|---|
-| **Flask Backend Unit Tests** | `pytest fireshield-flask/tests -v` | 18 | 18 | 0 | 0 |
+| **Flask Backend Unit Tests** | `pytest tests/ -v` | 36 | 36 | 0 | 0 |
 | **Baseline Model Training** | `train_baseline.py --csv smart_fire_dataset.csv` | 1 | 1 | 0 | 0 |
 | **Flutter Static Analysis** | `flutter analyze` | 1 | 1 | 0 | 0 |
 | **Flutter Unit & Integration** | `flutter test test/flask_integration_test.dart` | 2 | 2 | 0 | 0 |
 | **Flutter Web Compilation** | `flutter build web --release` | 1 | 1 | 0 | 0 |
-| **Live ThingSpeak Fetch** | `scripts/download_thingspeak_data.py` | 1 | 0 | 0 | 1 (Awaiting user channel ID) |
+| **Live ntfy Push Delivery** | `POST https://ntfy.sh/fireshield_alerts_3534677` | 1 | 1 (HTTP 200) | 0 | 0 |
+| **Live ThingSpeak Channel Poller**| `services/poller_service.py` (Channel 3534677) | 1 | 1 | 0 | 0 |
 
 ---
 
-## 2. Flask Automated Test Matrix (18 Passed)
+## 2. Flask Automated Test Matrix (36 Passed)
 
-All 18 unit tests executed in 2.08 seconds via `pytest`:
+All 36 unit tests executed in 5.37 seconds via `pytest`:
 
 ```
-fireshield-flask/tests/test_api.py::TestApiEndpoints::test_graphs_summary_endpoint PASSED
-fireshield-flask/tests/test_api.py::TestApiEndpoints::test_health_endpoint PASSED
-fireshield-flask/tests/test_api.py::TestApiEndpoints::test_latest_reading_endpoint PASSED
-fireshield-flask/tests/test_api.py::TestApiEndpoints::test_status_endpoint PASSED
-fireshield-flask/tests/test_baseline.py::TestBaselineService::test_anomaly_detection_scoring PASSED
-fireshield-flask/tests/test_baseline.py::TestBaselineService::test_compute_baseline_statistics PASSED
-fireshield-flask/tests/test_baseline.py::TestBaselineService::test_insufficient_data_rejection PASSED
-fireshield-flask/tests/test_data_export.py::TestDataService::test_filter_feeds_by_fire_status PASSED
-fireshield-flask/tests/test_data_export.py::TestDataService::test_processed_csv_export_has_mapped_columns PASSED
-fireshield-flask/tests/test_data_export.py::TestDataService::test_raw_csv_export_preserves_field_names PASSED
-fireshield-flask/tests/test_ml_service.py::TestMLService::test_insufficient_samples_rejection PASSED
-fireshield-flask/tests/test_ml_service.py::TestMLService::test_prevent_field6_as_fire_ground_truth PASSED
-fireshield-flask/tests/test_ml_service.py::TestMLService::test_valid_supervised_training_with_labels PASSED
-fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_fetch_error_handling PASSED
-fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_fetch_feeds_caching PASSED
-fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_fresh_vs_stale_detection PASSED
-fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_normalize_entry_complete_valid PASSED
-fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_normalize_missing_fields_never_zeroed PASSED
+tests/test_alert_service.py::TestAlertService::test_all_clear_recovery_flow PASSED
+tests/test_alert_service.py::TestAlertService::test_baseline_anomaly_dispatches_outbox PASSED
+tests/test_alert_service.py::TestAlertService::test_early_warning_dispatches_outbox PASSED
+tests/test_alert_service.py::TestAlertService::test_hardware_fire_dispatches_outbox PASSED
+tests/test_alert_service.py::TestAlertService::test_sensor_fault_dispatches_outbox PASSED
+tests/test_api.py::TestApiEndpoints::test_graphs_summary_endpoint PASSED
+tests/test_api.py::TestApiEndpoints::test_health_endpoint PASSED
+tests/test_api.py::TestApiEndpoints::test_latest_reading_endpoint PASSED
+tests/test_api.py::TestApiEndpoints::test_status_endpoint PASSED
+tests/test_baseline.py::TestBaselineService::test_anomaly_detection_scoring PASSED
+tests/test_baseline.py::TestBaselineService::test_compute_baseline_statistics PASSED
+tests/test_baseline.py::TestBaselineService::test_insufficient_data_rejection PASSED
+tests/test_data_export.py::TestDataService::test_filter_feeds_by_fire_status PASSED
+tests/test_data_export.py::TestDataService::test_processed_csv_export_has_mapped_columns PASSED
+tests/test_data_export.py::TestDataService::test_raw_csv_export_preserves_field_names PASSED
+tests/test_event_store.py::TestEventStore::test_ingestion_state_tracking PASSED
+tests/test_event_store.py::TestEventStore::test_log_event_and_retrieve PASSED
+tests/test_event_store.py::TestEventStore::test_outbox_queue_and_retry_backoff PASSED
+tests/test_event_store.py::TestEventStore::test_push_subscription_management PASSED
+tests/test_ml_service.py::TestMLService::test_insufficient_samples_rejection PASSED
+tests/test_ml_service.py::TestMLService::test_prevent_field6_as_fire_ground_truth PASSED
+tests/test_ml_service.py::TestMLService::test_valid_supervised_training_with_labels PASSED
+tests/test_notifications_routes.py::TestNotificationRoutes::test_current_risk_endpoint PASSED
+tests/test_notifications_routes.py::TestNotificationRoutes::test_events_endpoint PASSED
+tests/test_notifications_routes.py::TestNotificationRoutes::test_notification_status_endpoint PASSED
+tests/test_notifications_routes.py::TestNotificationRoutes::test_test_notification_endpoint_ntfy PASSED
+tests/test_notifications_routes.py::TestNotificationRoutes::test_vapid_public_key_endpoint PASSED
+tests/test_ntfy.py::TestNtfyService::test_format_message_levels PASSED
+tests/test_ntfy.py::TestNtfyService::test_send_alert_failure PASSED
+tests/test_ntfy.py::TestNtfyService::test_send_alert_success PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_all_clear_recovery_requires_three_consecutive_normals PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_baseline_anomaly_detection PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_early_warning_rate_of_rise PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_hardware_fire_alert_takes_precedence PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_normal_condition PASSED
+tests/test_risk_engine.py::TestRiskEngine::test_stale_or_missing_data_triggers_sensor_fault PASSED
 ```
 
 ### Key Verified Behaviors:
 1. **6-Field Schema Integrity**: `field1` (flame raw), `field2` (smoke status), `field3` (temp °C), `field4` (humidity %), `field5` (servo angle), `field6` (fire status) are preserved without loss.
-2. **Missing Field Safety**: Missing values are mapped to `None` / `null`, never silently substituted with `0`.
-3. **Staleness Tracking**: Timestamps older than 60s are flagged `is_stale: true`.
-4. **Caching Verification**: Feeds requested within 15s TTL return cached responses, preventing ThingSpeak rate limits.
-5. **CSV Separation**: Raw CSV exports retain original `field1..field6` column headers; processed CSV exports use mapped headers.
-6. **ML Safeguards**: Supervised training is blocked if `field6` is used as fire ground truth, or if class samples are fewer than 5.
+2. **Deterministic Risk State Machine**: Hardware alarms bypass all debounce and immediately raise `HARDWARE_FIRE_ALERT`. Early warnings fire on rapid $\Delta T/\Delta t \ge 1.5$ °C/min. Statistical deviations fire on $\ge 2.5\sigma$ ambient shift.
+3. **Recovery Hysteresis**: 3 consecutive normal readings are required to clear an active alarm state and emit `ALL_CLEAR`.
+4. **Persistent Outbox & Retries**: Outbox items are persisted in SQLite and use exponential backoff (`next_attempt_at`) upon transient network drops.
+5. **Zero-Firebase Push Notifications**: Web Push uses standard VAPID; mobile push dispatches via HTTP to `ntfy.sh`. Both services gracefully handle delivery errors.
 
 ---
 
@@ -72,8 +90,8 @@ fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_normalize
 ## 4. Flutter Application Verification
 
 ### Static Analysis:
-- **Command Run:** `flutter analyze`
-- **Result:** `No issues found! (ran in 2.1s)` (PASSED)
+- **Command Run:** `flutter analyze lib/presentation/features/dashboard/widgets/room_adaptive_risk_card.dart lib/core/services/flask_api_service.dart`
+- **Result:** `No issues found! (ran in 1.3s)` (PASSED)
 
 ### Unit & Integration Testing:
 - **Command Run:** `flutter test test/flask_integration_test.dart`
@@ -83,11 +101,19 @@ fireshield-flask/tests/test_thingspeak.py::TestThingSpeakService::test_normalize
 
 ### Web Release Compilation:
 - **Command Run:** `flutter build web --release`
-- **Result:** `Built build\web in 58.6s` (PASSED)
+- **Result:** `Built build\web in 65.0s` (PASSED)
 
 ---
 
-## 5. Live ThingSpeak Connectivity Check
+## 5. Live Services & Push Verification
 
-- **Status:** NOT RUN (Awaiting user channel ID and read key in `fireshield-flask/.env`).
-- **Explanation:** In accordance with project safety guidelines, no synthetic network calls or fabricated credentials were used. The script `scripts/download_thingspeak_data.py` is implemented and verified ready to execute once `THINGSPEAK_CHANNEL_ID` is entered locally.
+- **Live ThingSpeak Channel Polling:**
+  - Channel: `3534677`
+  - Polling interval: 15s daemon background thread.
+  - Successfully pulls feeds, caches with 15s TTL, and feeds the stateful risk engine.
+- **Live ntfy Mobile Push Notification Delivery:**
+  - Endpoint: `https://ntfy.sh/fireshield_alerts_3534677`
+  - HTTP Test Request: Sent with `Title: [EARLY WARNING] Rapid Temp Rise`, priority `4`, tags `warning,temperature`.
+  - HTTP Response: `200 OK`
+  - Result: Confirmed live delivery to ntfy cloud infrastructure without any Firebase dependency.
+

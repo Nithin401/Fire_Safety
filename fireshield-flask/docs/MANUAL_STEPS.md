@@ -159,3 +159,28 @@ flutter build web --release
    ```
 2. Copy `build/web/` to your static hosting provider (GitHub Pages, Netlify, or Vercel).
 3. If hosting publicly, ensure `FlaskApiService` points to your public HTTPS Flask API endpoint.
+
+---
+
+## 7. Zero-Firebase Real-Time Alert Setup
+
+### A. Mobile Notifications via ntfy (Recommended for Android / iOS)
+No Firebase SDKs or accounts are needed.
+
+1. Install the official **ntfy** app on your phone:
+   - Android: Search `ntfy` on [Google Play Store](https://play.google.com/store/apps/details?id=io.heckel.ntfy)
+   - iOS: Search `ntfy` on [Apple App Store](https://apps.apple.com/app/ntfy/id1625396347)
+2. Open the ntfy app and tap the **+** (Subscribe to topic) button.
+3. Enter your topic name: `fireshield_alerts_3534677` (configured in `fireshield-flask/.env` as `NTFY_TOPIC`).
+4. Tap **Subscribe**.
+5. Test delivery immediately:
+   - Open `http://localhost:5000/overview` on your computer or tap **Send Test Alert** in the Flutter app.
+   - You will hear an audible alert with `[FIRE ALERT]` or `[EARLY WARNING]` on your phone.
+
+### B. In-Browser Web Push Notifications (Desktop / PWA)
+1. Open the Flask dashboard at `http://localhost:5000/overview` (or your Flutter web app).
+2. Click **Enable Browser Push Notifications**.
+3. When prompted by Chrome / Edge / Firefox, click **Allow**.
+4. Standard VAPID keys are auto-generated in `fireshield-flask/data/vapid_keys.json`.
+5. Background alerts will appear on your desktop tray even when the tab is backgrounded.
+

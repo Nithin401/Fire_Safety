@@ -13,7 +13,8 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 from config import Config
-from routes import api_bp, dashboard_bp, export_bp, models_bp
+from routes import api_bp, dashboard_bp, export_bp, models_bp, notifications_bp
+from services import ThingSpeakPoller
 
 
 def create_app(config_class: type[Config] = Config) -> Flask:
@@ -25,13 +26,10 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     )
     app.config.from_object(config_class)
 
-    # Initialize restricted CORS for Flutter web / mobile dev origins (supports any localhost/127.0.0.1 port)
-    allowed_origins = [
-        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-    ] + config_class.CORS_ALLOWED_ORIGINS
+    # Initialize CORS for Flutter web / mobile dev origins (supports localhost, LAN IP, and mobile devices)
     CORS(
         app,
-        resources={r"/api/*": {"origins": allowed_origins}},
+        resources={r"/api/*": {"origins": "*"}},
         supports_credentials=True,
     )
 
@@ -40,12 +38,19 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(export_bp)
     app.register_blueprint(models_bp)
+    app.register_blueprint(notifications_bp)
+
+    # Serve Service Worker at root for Web Push API
+    @app.route("/service-worker.js")
+    def service_worker():
+        return app.send_static_file("service-worker.js")
 
     # Ensure required data directories exist
     Config.DATA_RAW_DIR.mkdir(parents=True, exist_ok=True)
     Config.DATA_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     Config.DATA_LABELS_DIR.mkdir(parents=True, exist_ok=True)
     Config.DATA_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    Config.DATA_NOTIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Error Handlers
     @app.errorhandler(404)
@@ -71,4 +76,10 @@ if __name__ == "__main__":
     debug = Config.DEBUG
     print(f"[FireShield AI] Flask running on http://{host}:{port} (Debug: {debug})")
     print(f"[ThingSpeak] Configured Channel: {Config.THINGSPEAK_CHANNEL_ID or 'Not Set'}")
+    print(f"[Notifications] ntfy Topic: {Config.NTFY_TOPIC}")
+
+    # Start continuous background ThingSpeak poller daemon
+    poller = ThingSpeakPoller(config=Config)
+    poller.start()
+
     app.run(host=host, port=port, debug=debug)

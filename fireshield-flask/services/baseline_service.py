@@ -181,6 +181,19 @@ class BaselineService:
         except Exception:
             return None
 
+    def get_baseline(self) -> Optional[Dict[str, Any]]:
+        """Return baseline data with convenient flattened accessors for risk engine."""
+        base = self.load_baseline()
+        if not base:
+            return None
+        tb = base.get("temperature_baseline", {})
+        hb = base.get("humidity_baseline", {})
+        base["temperature_mean"] = tb.get("mean")
+        base["temperature_std"] = tb.get("std", 1.0)
+        base["humidity_mean"] = hb.get("mean")
+        base["humidity_std"] = hb.get("std", 1.0)
+        return base
+
     @classmethod
     def evaluate_anomalies(
         cls,
