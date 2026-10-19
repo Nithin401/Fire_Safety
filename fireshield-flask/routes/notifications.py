@@ -173,3 +173,37 @@ def current_risk():
             "sample_count": baseline.get("sample_count") if baseline else 0,
         } if baseline else None,
     })
+
+
+@notifications_bp.route("/alerts", methods=["GET"])
+def get_alerts():
+    """Backwards-compatible alerts feed for Flutter NotificationModel."""
+    events = event_store.get_recent_events(limit=30)
+    alerts = []
+    for ev in events:
+        event_type = ev.get("event_type", "EVENT")
+        severity = "critical" if "FIRE" in event_type else ("warning" if "WARNING" in event_type or "ANOMALY" in event_type else "info")
+        data = ev.get("data") or {}
+        alerts.append({
+            "id": f"ev_{ev.get('id')}",
+            "title": f"FireShield: {event_type.replace('_', ' ')}",
+            "message": ev.get("reason", "Hazard event recorded."),
+            "timestamp": ev.get("timestamp"),
+            "isRead": bool(ev.get("acknowledged")),
+            "severity": severity,
+            "deviceId": "esp8266_esp1",
+            "roomId": "Living Room",
+            "fireState": event_type,
+            "riskScore": 90.0 if severity == "critical" else (60.0 if severity == "warning" else 10.0),
+            "fireAngle": data.get("servo_angle"),
+        })
+    return jsonify(alerts), 200
+
+
+@notifications_bp.route("/alerts/<alert_id>/ack", methods=["POST"])
+def ack_alert(alert_id: str):
+    """Acknowledge alert by ID."""
+    clean_id = alert_id.replace("ev_", "")
+    event_store.acknowledge_event(clean_id)
+    return jsonify({"status": "acknowledged", "id": alert_id}), 200
+
