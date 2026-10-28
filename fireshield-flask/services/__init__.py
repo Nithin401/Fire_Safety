@@ -8,6 +8,7 @@ from .ntfy_service import NtfyService
 from .webpush_service import WebPushService
 from .alert_service import AlertService
 from .poller_service import ThingSpeakPoller
+from .voice_service import VoiceService
 
 __all__ = [
     "ThingSpeakService",
@@ -21,4 +22,5 @@ __all__ = [
     "WebPushService",
     "AlertService",
     "ThingSpeakPoller",
+    "VoiceService",
 ]

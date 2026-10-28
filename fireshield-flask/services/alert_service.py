@@ -7,6 +7,7 @@ from config import Config
 from services.event_store import EventStore
 from services.ntfy_service import NtfyService
 from services.risk_engine import RiskEngine, RiskState
+from services.voice_service import VoiceService
 from services.webpush_service import WebPushService
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,14 @@ class AlertService:
         risk_engine: Optional[RiskEngine] = None,
         ntfy_service: Optional[NtfyService] = None,
         webpush_service: Optional[WebPushService] = None,
+        voice_service: Optional[VoiceService] = None,
     ):
         self.config = config or Config
         self.event_store = event_store or EventStore()
         self.risk_engine = risk_engine or RiskEngine(config=self.config)
         self.ntfy_service = ntfy_service or NtfyService(config=self.config)
         self.webpush_service = webpush_service or WebPushService(config=self.config, event_store=self.event_store)
+        self.voice_service = voice_service or VoiceService(config=self.config, event_store=self.event_store)
 
     def evaluate_and_alert(
         self,
@@ -70,6 +73,25 @@ class AlertService:
 
         if should_alert and recorded_event:
             event_id = recorded_event.get("event_id", "")
+
+            # 1. High Priority: Automated Outbound Voice Call for Critical Fire Incidents
+            # Never delayed by other channels; executed immediately upon HARDWARE_FIRE_ALERT or fire_status == 1
+            if event_type == RiskState.HARDWARE_FIRE_ALERT or metrics.get("fire_status") == 1 or severity == "CRITICAL":
+                voice_outbox_id = self.event_store.enqueue_notification(
+                    event_id=event_id,
+                    channel="voice",
+                    payload=recorded_event,
+                    recipient_id=self.voice_service.recipient_phone,
+                    max_attempts=3,
+                )
+                voice_res = self.voice_service.trigger_fire_voice_call(recorded_event)
+                delivery_results["voice"] = voice_res
+                if voice_res.get("success"):
+                    self.event_store.mark_outbox_delivered(voice_outbox_id)
+                else:
+                    self.event_store.mark_outbox_failed(
+                        voice_outbox_id, voice_res.get("error") or voice_res.get("message") or "Voice alert not dispatched"
+                    )
 
             # 2. Dispatch via ntfy (Mobile channel)
             ntfy_outbox_id = self.event_store.enqueue_notification(
@@ -123,7 +145,16 @@ class AlertService:
             channel = item["channel"]
             payload = item.get("payload", {})
 
-            if channel == "ntfy":
+            if channel == "voice":
+                res = self.voice_service.trigger_fire_voice_call(payload, recipient_override=item.get("recipient_id") or None)
+                if res.get("success"):
+                    self.event_store.mark_outbox_delivered(outbox_id)
+                    succeeded += 1
+                else:
+                    self.event_store.mark_outbox_failed(outbox_id, res.get("error", "Voice call retry failed"))
+                    failed += 1
+
+            elif channel == "ntfy":
                 res = self.ntfy_service.publish_event(payload, topic=item.get("recipient_id") or None)
                 if res.get("success"):
                     self.event_store.mark_outbox_delivered(outbox_id)
@@ -166,6 +197,8 @@ class AlertService:
             "fire_status": 0,
         }
 
+        if "voice" in target_channels:
+            results["voice"] = self.voice_service.trigger_fire_voice_call(test_event, force=True)
         if "ntfy" in target_channels:
             results["ntfy"] = self.ntfy_service.send_test_notification()
         if "webpush" in target_channels:

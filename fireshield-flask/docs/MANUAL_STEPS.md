@@ -184,3 +184,47 @@ No Firebase SDKs or accounts are needed.
 4. Standard VAPID keys are auto-generated in `fireshield-flask/data/vapid_keys.json`.
 5. Background alerts will appear on your desktop tray even when the tab is backgrounded.
 
+---
+
+## 8. Automated Outbound Voice Calls Setup (Exotel India)
+
+When a critical fire incident occurs (`field6 == 1` or raw flame/smoke active), FireShield AI can automatically place a spoken phone call to your verified Indian mobile number.
+
+### A. Setting Up Exotel Trial Account
+1. Create a free trial account at [Exotel Trial Signup](https://docs.exotel.com/business-phone-system/create-a-trial-account).
+2. Exotel grants **₹1,000 worth of trial credits** for prototype testing.
+3. Complete mobile verification for your personal Android phone number. During trial, Exotel outbound calls are restricted strictly to your verified account numbers.
+4. From the Exotel Dashboard:
+   - Copy **Account SID**
+   - Copy **API Key**
+   - Copy **API Token**
+   - Note your assigned Exotel **Virtual Number** (Caller ID, e.g. `0804710XXXX` or `011XXXXXXX`)
+
+### B. Configuring `fireshield-flask/.env`
+In `fireshield-flask/.env`, add:
+```ini
+# Exotel Configuration
+EXOTEL_ACCOUNT_SID=your_exotel_account_sid_here
+EXOTEL_API_KEY=your_exotel_api_key_here
+EXOTEL_API_TOKEN=your_exotel_api_token_here
+EXOTEL_CALLER_ID=your_assigned_exotel_virtual_number
+EXOTEL_API_BASE_URL=https://api.exotel.com
+
+# Recipient phone in E.164 (+91XXXXXXXXXX)
+FIRESHIELD_ALERT_PHONE=+919876543210
+
+# Activation Controls
+VOICE_ALERT_ENABLED=true
+VOICE_ALERT_DRY_RUN=true       # Keep 'true' to verify without consuming trial credits
+VOICE_ALERT_COOLDOWN_SECONDS=300
+PUBLIC_BASE_URL=http://localhost:5000
+```
+
+### C. Testing Steps
+1. Navigate to `http://localhost:5000/voice-alerts` in your browser.
+2. Verify the **Exotel Credentials Checklist** shows all checkmarks.
+3. Click **📞 Place Test Call Now** to test in safe Dry-Run mode.
+4. Once verified, set `VOICE_ALERT_DRY_RUN=false` in `.env` and restart Flask to place a real trial call to your verified Android phone.
+5. Answer the call to hear the automated voice alert:
+   > *"FireShield AI critical alert. A possible fire condition has been detected. Please check the affected area safely. This is an automated safety alert."*
+

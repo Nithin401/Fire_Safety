@@ -94,6 +94,27 @@ class EventStore:
                 )
             """)
 
+            # Voice Calls Table (Exotel Outbound Telephony Audit Log)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS voice_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    call_id TEXT UNIQUE NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    entry_id INTEGER,
+                    recipient_phone TEXT NOT NULL,
+                    provider TEXT DEFAULT 'exotel',
+                    provider_call_sid TEXT,
+                    status TEXT NOT NULL,
+                    message_text TEXT NOT NULL,
+                    is_dry_run INTEGER DEFAULT 0,
+                    attempts INTEGER DEFAULT 1,
+                    error_message TEXT,
+                    provider_response_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
             conn.commit()
 
     # -------------------------------------------------------------
@@ -355,3 +376,125 @@ class EventStore:
             cursor.execute("SELECT * FROM push_subscriptions WHERE active = 1")
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
+
+    # -------------------------------------------------------------
+    # Voice Call Telephony Audit Log Management
+    # -------------------------------------------------------------
+
+    def record_voice_call(
+        self,
+        call_id: str,
+        incident_id: str,
+        recipient_phone: str,
+        status: str,
+        message_text: str,
+        entry_id: Optional[int] = None,
+        provider: str = "exotel",
+        provider_call_sid: Optional[str] = None,
+        is_dry_run: bool = False,
+        attempts: int = 1,
+        error_message: Optional[str] = None,
+        provider_response: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        resp_json = json.dumps(provider_response or {})
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO voice_calls (
+                    call_id, incident_id, entry_id, recipient_phone, provider,
+                    provider_call_sid, status, message_text, is_dry_run, attempts,
+                    error_message, provider_response_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                call_id, incident_id, entry_id, recipient_phone, provider,
+                provider_call_sid or "", status, message_text, 1 if is_dry_run else 0,
+                attempts, error_message or "", resp_json, now_iso, now_iso
+            ))
+            conn.commit()
+
+        return self.get_voice_call_by_id(call_id) or {}
+
+    def update_voice_call_status(
+        self,
+        call_id: str,
+        status: str,
+        provider_call_sid: Optional[str] = None,
+        error_message: Optional[str] = None,
+        provider_response: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = "UPDATE voice_calls SET status = ?, updated_at = ?"
+            params: List[Any] = [status, now_iso]
+
+            if provider_call_sid is not None:
+                query += ", provider_call_sid = ?"
+                params.append(provider_call_sid)
+            if error_message is not None:
+                query += ", error_message = ?"
+                params.append(error_message)
+            if provider_response is not None:
+                query += ", provider_response_json = ?"
+                params.append(json.dumps(provider_response))
+
+            query += " WHERE call_id = ? OR provider_call_sid = ?"
+            params.extend([call_id, call_id])
+
+            cursor.execute(query, tuple(params))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_voice_call_by_id(self, call_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM voice_calls WHERE call_id = ? OR provider_call_sid = ?", (call_id, call_id))
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_voice_call_dict(row)
+            return None
+
+    def get_recent_voice_calls(self, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM voice_calls ORDER BY id DESC LIMIT ?", (limit,))
+            rows = cursor.fetchall()
+            return [self._row_to_voice_call_dict(r) for r in rows]
+
+    def get_last_voice_call(self) -> Optional[Dict[str, Any]]:
+        calls = self.get_recent_voice_calls(limit=1)
+        return calls[0] if calls else None
+
+    def is_in_voice_cooldown(self, cooldown_seconds: int = 300) -> bool:
+        """Check if any outbound call was initiated within cooldown_seconds."""
+        last_call = self.get_last_voice_call()
+        if not last_call:
+            return False
+
+        created_at_str = last_call.get("created_at")
+        if not created_at_str:
+            return False
+
+        try:
+            created_at = datetime.fromisoformat(created_at_str)
+            now = datetime.now(timezone.utc)
+            # Ensure created_at is timezone-aware
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            delta = (now - created_at).total_seconds()
+            return delta < cooldown_seconds
+        except Exception:
+            return False
+
+    def _row_to_voice_call_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        d = dict(row)
+        if d.get("provider_response_json"):
+            try:
+                d["provider_response"] = json.loads(d["provider_response_json"])
+            except Exception:
+                d["provider_response"] = {}
+        else:
+            d["provider_response"] = {}
+        return d

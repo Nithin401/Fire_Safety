@@ -13,7 +13,7 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 from config import Config
-from routes import api_bp, dashboard_bp, export_bp, models_bp, notifications_bp
+from routes import api_bp, dashboard_bp, export_bp, models_bp, notifications_bp, voice_bp
 from services import ThingSpeakPoller
 
 
@@ -39,6 +39,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     app.register_blueprint(export_bp)
     app.register_blueprint(models_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(voice_bp)
 
     # Serve Service Worker at root for Web Push API
     @app.route("/service-worker.js")

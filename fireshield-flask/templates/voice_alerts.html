@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}FireShield AI - Outbound Voice Calls (Exotel){% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: 1.5rem;">
+  <h2>📞 Automated Outbound Voice Alerts (India Telephony)</h2>
+  <p class="subtitle" style="color: var(--text-muted); margin-top: 0.25rem;">
+    Zero-Firebase automated phone call alerts powered by Exotel for critical hardware fire incidents.
+  </p>
+</div>
+
+<!-- Safety Notice Banner -->
+<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem;">
+  <strong style="color: #f87171;">⚠️ Life-Safety Notice:</strong>
+  <span style="color: #cbd5e1; font-size: 0.9rem;">
+    Automated phone calls are an early-warning telemetry complement for prototype testing. They do not replace local physical alarms (buzzer/servo) or official emergency services (101/112).
+  </span>
+</div>
+
+<!-- Status Grid -->
+<div class="grid grid-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+  <div class="card stat-card" style="background: var(--bg-card); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border);">
+    <span class="stat-label" style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Service State</span>
+    <div style="margin-top: 0.5rem; font-size: 1.25rem; font-weight: 700;">
+      {% if status.enabled %}
+        <span style="color: var(--success);">🟢 ENABLED</span>
+      {% else %}
+        <span style="color: var(--text-muted);">⚪ DISABLED</span>
+      {% endif %}
+    </div>
+    <span style="font-size: 0.75rem; color: var(--text-muted);">VOICE_ALERT_ENABLED</span>
+  </div>
+
+  <div class="card stat-card" style="background: var(--bg-card); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border);">
+    <span class="stat-label" style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Telephony Mode</span>
+    <div style="margin-top: 0.5rem; font-size: 1.25rem; font-weight: 700;">
+      {% if status.effective_dry_run %}
+        <span style="color: var(--warning);">🟡 DRY RUN (Safe)</span>
+      {% else %}
+        <span style="color: var(--accent);">🔵 LIVE EXOTEL</span>
+      {% endif %}
+    </div>
+    <span style="font-size: 0.75rem; color: var(--text-muted);">
+      {% if status.effective_dry_run %}No credits used{% else %}Active outbound calls{% endif %}
+    </span>
+  </div>
+
+  <div class="card stat-card" style="background: var(--bg-card); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border);">
+    <span class="stat-label" style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Recipient Mobile</span>
+    <div style="margin-top: 0.5rem; font-size: 1.15rem; font-weight: 700; color: #fff;">
+      {{ status.masked_recipient }}
+    </div>
+    <span style="font-size: 0.75rem; color: var(--text-muted);">FIRESHIELD_ALERT_PHONE</span>
+  </div>
+
+  <div class="card stat-card" style="background: var(--bg-card); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border);">
+    <span class="stat-label" style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Cooldown Window</span>
+    <div style="margin-top: 0.5rem; font-size: 1.25rem; font-weight: 700; color: #fff;">
+      {{ status.cooldown_seconds }}s ({{ (status.cooldown_seconds / 60)|int }}m)
+    </div>
+    <span style="font-size: 0.75rem; color: var(--text-muted);">
+      {% if status.in_cooldown %}
+        <span style="color: var(--warning);">⏳ Cooldown Active</span>
+      {% else %}
+        <span style="color: var(--success);">Ready for next alert</span>
+      {% endif %}
+    </span>
+  </div>
+</div>
+
+<div class="grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+  <!-- Provider Configuration Checklist -->
+  <div class="card" style="background: var(--bg-card); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
+    <h3 style="margin-bottom: 1rem; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>⚙️</span> Exotel Credentials Checklist
+    </h3>
+    <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.75rem;">
+      <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
+        <span>Account SID</span>
+        <span>{% if status.has_account_sid %}<span style="color: var(--success);">✓ Configured</span>{% else %}<span style="color: var(--danger);">✗ Missing</span>{% endif %}</span>
+      </li>
+      <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
+        <span>API Key</span>
+        <span>{% if status.has_api_key %}<span style="color: var(--success);">✓ Configured</span>{% else %}<span style="color: var(--danger);">✗ Missing</span>{% endif %}</span>
+      </li>
+      <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
+        <span>API Token</span>
+        <span>{% if status.has_api_token %}<span style="color: var(--success);">✓ Configured</span>{% else %}<span style="color: var(--danger);">✗ Missing</span>{% endif %}</span>
+      </li>
+      <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
+        <span>Caller ID Virtual Number</span>
+        <span>{% if status.has_caller_id %}<span style="color: var(--success);">✓ {{ status.masked_caller_id }}</span>{% else %}<span style="color: var(--danger);">✗ Missing</span>{% endif %}</span>
+      </li>
+      <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
+        <span>Verified Recipient Phone</span>
+        <span>{% if status.has_recipient_phone %}<span style="color: var(--success);">✓ {{ status.masked_recipient }}</span>{% else %}<span style="color: var(--danger);">✗ Missing</span>{% endif %}</span>
+      </li>
+      <li style="display: flex; justify-content: space-between; align-items: center; padding-top: 0.25rem;">
+        <span>ExoML Voice Flow</span>
+        <span>
+          {% if status.has_app_id %}
+            <span style="color: var(--accent);">App ID: {{ status.app_id }}</span>
+          {% else %}
+            <span style="color: var(--safe);">Dynamic /api/voice/exoml</span>
+          {% endif %}
+        </span>
+      </li>
+    </ul>
+
+    <div style="margin-top: 1.25rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+      💡 To activate real phone calls, enter your verified Exotel trial credentials in <code>fireshield-flask/.env</code> and set <code>VOICE_ALERT_ENABLED=true</code> &amp; <code>VOICE_ALERT_DRY_RUN=false</code>.
+    </div>
+  </div>
+
+  <!-- Interactive Test Call Panel -->
+  <div class="card" style="background: var(--bg-card); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: space-between;">
+    <div>
+      <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>🧪</span> Trigger Test Voice Call
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        Places an authorized test call to verify audio delivery and provider connectivity. In dry-run mode, this simulates acceptance without consuming trial credits.
+      </p>
+
+      <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 6px; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Spoken Message Prompt:</div>
+        <div style="font-size: 0.85rem; color: #e2e8f0; font-style: italic;">
+          "FireShield AI critical alert. A possible fire condition has been detected. Please check the affected area safely. This is an automated safety alert."
+        </div>
+      </div>
+
+      <div id="testResultBox" style="display: none; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;"></div>
+    </div>
+
+    <div>
+      <button id="triggerTestCallBtn" class="btn" style="background: var(--accent); color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; transition: opacity 0.2s;">
+        📞 Place Test Call Now
+      </button>
+      <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 0.5rem;">
+        Requires user confirmation &bull; Bypasses cooldown &bull; Emergency numbers prohibited
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Voice Call Audit Log Table -->
+<div class="card" style="background: var(--bg-card); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>📋</span> Voice Call Incident Audit Log
+    </h3>
+    <span style="font-size: 0.8rem; color: var(--text-muted);">Retains recent SQLite attempts</span>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+      <thead>
+        <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
+          <th style="padding: 0.75rem 0.5rem;">Timestamp</th>
+          <th style="padding: 0.75rem 0.5rem;">Call ID</th>
+          <th style="padding: 0.75rem 0.5rem;">Incident ID</th>
+          <th style="padding: 0.75rem 0.5rem;">Recipient</th>
+          <th style="padding: 0.75rem 0.5rem;">Status</th>
+          <th style="padding: 0.75rem 0.5rem;">Mode</th>
+          <th style="padding: 0.75rem 0.5rem;">Provider SID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if calls %}
+          {% for call in calls %}
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+              <td style="padding: 0.75rem 0.5rem; color: var(--text-muted);">
+                {{ call.created_at[:19].replace('T', ' ') }}
+              </td>
+              <td style="padding: 0.75rem 0.5rem; font-family: monospace; font-size: 0.8rem;">
+                {{ call.call_id }}
+              </td>
+              <td style="padding: 0.75rem 0.5rem; font-family: monospace; font-size: 0.8rem;">
+                {{ call.incident_id }}
+              </td>
+              <td style="padding: 0.75rem 0.5rem;">
+                {{ call.recipient_phone[:4] }}****{{ call.recipient_phone[-4:] if call.recipient_phone|length > 6 else '' }}
+              </td>
+              <td style="padding: 0.75rem 0.5rem;">
+                {% if call.status in ('accepted', 'completed', 'in-progress') %}
+                  <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600;">
+                    {{ call.status|upper }}
+                  </span>
+                {% elif call.status == 'requested' %}
+                  <span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 0.2rem 0.5rem; border-radius: 4px;">
+                    REQUESTED
+                  </span>
+                {% elif call.status == 'cooldown_suppressed' %}
+                  <span style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 0.2rem 0.5rem; border-radius: 4px;">
+                    COOLDOWN
+                  </span>
+                {% else %}
+                  <span style="background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 0.2rem 0.5rem; border-radius: 4px;">
+                    {{ call.status|upper }}
+                  </span>
+                {% endif %}
+              </td>
+              <td style="padding: 0.75rem 0.5rem;">
+                {% if call.is_dry_run %}
+                  <span style="color: var(--warning); font-size: 0.8rem;">DRY RUN</span>
+                {% else %}
+                  <span style="color: var(--accent); font-size: 0.8rem;">LIVE</span>
+                {% endif %}
+              </td>
+              <td style="padding: 0.75rem 0.5rem; font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">
+                {{ call.provider_call_sid or 'N/A' }}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7" style="padding: 2rem 0.5rem; text-align: center; color: var(--text-muted);">
+              No outbound voice calls recorded yet. Hardware fire triggers will automatically log here.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('triggerTestCallBtn').addEventListener('click', async function() {
+  const isDryRun = {{ 'true' if status.effective_dry_run else 'false' }};
+  const confirmMsg = isDryRun
+    ? "Trigger a simulated Dry-Run test call? (Safe: no real call will be placed, no credits used)."
+    : "Trigger a LIVE outbound call via Exotel to your verified phone number {{ status.masked_recipient }}? This may consume trial credits.";
+
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  const btn = this;
+  const resultBox = document.getElementById('testResultBox');
+  btn.disabled = true;
+  btn.innerText = "⏳ Initiating Call...";
+  resultBox.style.display = "none";
+
+  try {
+    const res = await fetch('/api/voice/test-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+
+    resultBox.style.display = "block";
+    if (res.ok && data.success) {
+      resultBox.style.background = "rgba(16, 185, 129, 0.15)";
+      resultBox.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      resultBox.style.color = "#34d399";
+      resultBox.innerHTML = `
+        <strong>✓ Test Call Accepted:</strong><br>
+        Call ID: <code>${data.call_id || 'N/A'}</code><br>
+        Provider SID: <code>${data.provider_call_sid || 'N/A'}</code><br>
+        Mode: ${data.is_dry_run ? '🟡 DRY RUN (Simulated)' : '🔵 LIVE EXOTEL'}<br>
+        Status: <strong>${data.status}</strong>
+      `;
+      // Refresh page after 2 seconds to show entry in table
+      setTimeout(() => window.location.reload(), 2200);
+    } else {
+      resultBox.style.background = "rgba(239, 68, 68, 0.15)";
+      resultBox.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+      resultBox.style.color = "#f87171";
+      resultBox.innerHTML = `<strong>✗ Test Call Failed:</strong> ${data.error || data.message || 'Unknown error'}`;
+      btn.disabled = false;
+      btn.innerText = "📞 Place Test Call Now";
+    }
+  } catch (err) {
+    resultBox.style.display = "block";
+    resultBox.style.background = "rgba(239, 68, 68, 0.15)";
+    resultBox.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+    resultBox.style.color = "#f87171";
+    resultBox.innerHTML = `<strong>✗ Network Error:</strong> ${err.message}`;
+    btn.disabled = false;
+    btn.innerText = "📞 Place Test Call Now";
+  }
+});
+</script>
+{% endblock %}

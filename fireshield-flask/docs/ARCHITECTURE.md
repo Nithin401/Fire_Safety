@@ -105,9 +105,13 @@ Located in `fireshield-flask/`:
   - Coordinates risk evaluation with event persistence and outbox delivery dispatch.
 - **`services/poller_service.py`**:
   - Autonomous daemon thread that polls ThingSpeak channel every 15 seconds, evaluates risk, logs transitions, and dispatches alerts without blocking HTTP requests.
+- **`services/voice_service.py`**:
+  - Telephony voice alert engine interfacing with Exotel's outbound call connect API.
+  - Normalizes Indian mobile numbers (+91), strictly prohibits emergency dispatch numbers, enforces incident deduplication and a 300-second cooldown window, redacts credentials, generates dynamic ExoML TTS voice prompts, and provides zero-cost dry-run simulation.
 - **`routes/`**:
   - `api.py`: JSON endpoints for Flutter and clients (`/api/health`, `/api/status`, `/api/readings/latest`, `/api/readings`, `/api/baseline`, `/api/graphs/summary`).
   - `notifications.py`: Push notification and risk endpoints (`/api/risk/current`, `/api/events`, `/api/notifications/vapid-public-key`, `/api/notifications/subscribe`, `/api/notifications/status`, `/api/notifications/test`).
+  - `voice.py`: Telephony endpoints (`/voice-alerts`, `/api/voice/status`, `/api/voice/test-call`, `/api/voice/callback`, `/api/voice/exoml`, `/api/voice/calls`).
   - `dashboard.py`: Renders Overview, Graphs, Baseline, and Alert notification controls.
   - `export.py`: Handles CSV downloads and offline file uploads.
   - `models.py`: Machine Learning studio.
@@ -153,12 +157,12 @@ Located in `_external_FireShieldAI/`:
        +----------------------+----------------------+
                               | Dispatch
                +--------------+--------------+
-               |                             |
-               v                             v
-+-----------------------------+ +-----------------------------+
-|    Standard Web Push VAPID  | |     ntfy Mobile Alerts      |
-|  - In-browser notifications | |  - Instant phone notifications
-|  - Service Worker background| |  - Zero app install required
-|  - Chrome/Edge/Firefox      | |  - Official ntfy iOS/Android
-+-----------------------------+ +-----------------------------+
+               |              |              |
+               v              v              v
++-----------------------+ +--------------------+ +------------------------+
+|   Standard Web Push   | | ntfy Mobile Alerts | |  Exotel Voice Alerts   |
+| - VAPID Web Push      | | - Android & iOS    | | - Automated phone call |
+| - Service Worker      | | - Topic subscriber | | - Spoken safety TTS    |
+| - Chrome/Edge/Firefox | | - Zero Firebase    | | - Verified Indian Num  |
++-----------------------+ +--------------------+ +------------------------+
 ```

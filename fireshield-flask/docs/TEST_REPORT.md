@@ -10,26 +10,22 @@
 
 | Test Category | Suite / Command | Total Checked | Passed | Failed | Not Run |
 |---|---|---|---|---|---|
-| **Flask Backend Unit Tests** | `pytest tests/ -v` | 36 | 36 | 0 | 0 |
+| **Flask Backend Unit Tests** | `pytest tests/ -v` | 52 | 52 | 0 | 0 |
 | **Baseline Model Training** | `train_baseline.py --csv smart_fire_dataset.csv` | 1 | 1 | 0 | 0 |
 | **Flutter Static Analysis** | `flutter analyze` | 1 | 1 | 0 | 0 |
 | **Flutter Unit & Integration** | `flutter test test/flask_integration_test.dart` | 2 | 2 | 0 | 0 |
 | **Flutter Web Compilation** | `flutter build web --release` | 1 | 1 | 0 | 0 |
 | **Live ntfy Push Delivery** | `POST https://ntfy.sh/fireshield_alerts_3534677` | 1 | 1 (HTTP 200) | 0 | 0 |
+| **Exotel Voice Call Adapter** | `tests/test_voice_service.py` | 16 | 16 | 0 | 0 |
 | **Live ThingSpeak Channel Poller**| `services/poller_service.py` (Channel 3534677) | 1 | 1 | 0 | 0 |
 
 ---
 
-## 2. Flask Automated Test Matrix (36 Passed)
+## 2. Flask Automated Test Matrix (52 Passed)
 
-All 36 unit tests executed in 5.37 seconds via `pytest`:
+All 52 unit tests executed in 3.06 seconds via `pytest`:
 
 ```
-tests/test_alert_service.py::TestAlertService::test_all_clear_recovery_flow PASSED
-tests/test_alert_service.py::TestAlertService::test_baseline_anomaly_dispatches_outbox PASSED
-tests/test_alert_service.py::TestAlertService::test_early_warning_dispatches_outbox PASSED
-tests/test_alert_service.py::TestAlertService::test_hardware_fire_dispatches_outbox PASSED
-tests/test_alert_service.py::TestAlertService::test_sensor_fault_dispatches_outbox PASSED
 tests/test_api.py::TestApiEndpoints::test_graphs_summary_endpoint PASSED
 tests/test_api.py::TestApiEndpoints::test_health_endpoint PASSED
 tests/test_api.py::TestApiEndpoints::test_latest_reading_endpoint PASSED
@@ -40,27 +36,48 @@ tests/test_baseline.py::TestBaselineService::test_insufficient_data_rejection PA
 tests/test_data_export.py::TestDataService::test_filter_feeds_by_fire_status PASSED
 tests/test_data_export.py::TestDataService::test_processed_csv_export_has_mapped_columns PASSED
 tests/test_data_export.py::TestDataService::test_raw_csv_export_preserves_field_names PASSED
-tests/test_event_store.py::TestEventStore::test_ingestion_state_tracking PASSED
-tests/test_event_store.py::TestEventStore::test_log_event_and_retrieve PASSED
-tests/test_event_store.py::TestEventStore::test_outbox_queue_and_retry_backoff PASSED
-tests/test_event_store.py::TestEventStore::test_push_subscription_management PASSED
 tests/test_ml_service.py::TestMLService::test_insufficient_samples_rejection PASSED
 tests/test_ml_service.py::TestMLService::test_prevent_field6_as_fire_ground_truth PASSED
 tests/test_ml_service.py::TestMLService::test_valid_supervised_training_with_labels PASSED
-tests/test_notifications_routes.py::TestNotificationRoutes::test_current_risk_endpoint PASSED
-tests/test_notifications_routes.py::TestNotificationRoutes::test_events_endpoint PASSED
-tests/test_notifications_routes.py::TestNotificationRoutes::test_notification_status_endpoint PASSED
-tests/test_notifications_routes.py::TestNotificationRoutes::test_test_notification_endpoint_ntfy PASSED
-tests/test_notifications_routes.py::TestNotificationRoutes::test_vapid_public_key_endpoint PASSED
-tests/test_ntfy.py::TestNtfyService::test_format_message_levels PASSED
-tests/test_ntfy.py::TestNtfyService::test_send_alert_failure PASSED
-tests/test_ntfy.py::TestNtfyService::test_send_alert_success PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_all_clear_recovery_requires_three_consecutive_normals PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_baseline_anomaly_detection PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_early_warning_rate_of_rise PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_hardware_fire_alert_takes_precedence PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_normal_condition PASSED
-tests/test_risk_engine.py::TestRiskEngine::test_stale_or_missing_data_triggers_sensor_fault PASSED
+tests/test_notifications.py::test_event_store_record_and_retrieve PASSED
+tests/test_notifications.py::test_outbox_queue_and_retry_backoff PASSED
+tests/test_notifications.py::test_webpush_subscription_management PASSED
+tests/test_notifications.py::test_ntfy_payload_mapping PASSED
+tests/test_notifications.py::test_ntfy_publish_success PASSED
+tests/test_notifications.py::test_api_vapid_public_key_schema PASSED
+tests/test_notifications.py::test_api_notification_status_schema PASSED
+tests/test_notifications.py::test_api_events_schema PASSED
+tests/test_notifications.py::test_api_current_risk_schema PASSED
+tests/test_risk_engine.py::test_normal_reading_evaluates_to_normal PASSED
+tests/test_risk_engine.py::test_hardware_fire_priority_with_field6 PASSED
+tests/test_risk_engine.py::test_hardware_fire_priority_with_flame_sensor PASSED
+tests/test_risk_engine.py::test_hardware_fire_priority_with_smoke_sensor PASSED
+tests/test_risk_engine.py::test_baseline_anomaly_environmental_only PASSED
+tests/test_risk_engine.py::test_early_warning_rapid_temp_rise PASSED
+tests/test_risk_engine.py::test_stale_reading_produces_data_fault PASSED
+tests/test_risk_engine.py::test_missing_fields_produces_data_fault PASSED
+tests/test_risk_engine.py::test_all_clear_transition_after_consecutive_normal_readings PASSED
+tests/test_thingspeak.py::TestThingSpeakService::test_fetch_error_handling PASSED
+tests/test_thingspeak.py::TestThingSpeakService::test_fetch_feeds_caching PASSED
+tests/test_thingspeak.py::TestThingSpeakService::test_fresh_vs_stale_detection PASSED
+tests/test_thingspeak.py::TestThingSpeakService::test_normalize_entry_complete_valid PASSED
+tests/test_thingspeak.py::TestThingSpeakService::test_normalize_missing_fields_never_zeroed PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_number_normalization PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_prohibited_emergency_numbers PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_credential_redaction_in_config_status PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_dry_run_mode_simulation PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_cooldown_prevents_spamming_calls PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_live_exotel_call_success PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_exotel_api_error_handling PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_exotel_timeout_handling PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_webhook_status_callback_updates_call PASSED
+tests/test_voice_service.py::TestVoiceServiceUnit::test_exoml_generation PASSED
+tests/test_voice_service.py::TestVoiceAlertIntegration::test_hardware_fire_reading_triggers_voice_call PASSED
+tests/test_voice_service.py::TestVoiceRoutes::test_get_voice_status_api PASSED
+tests/test_voice_service.py::TestVoiceRoutes::test_test_call_api_dry_run PASSED
+tests/test_voice_service.py::TestVoiceRoutes::test_test_call_prohibits_emergency_number PASSED
+tests/test_voice_service.py::TestVoiceRoutes::test_exoml_endpoint PASSED
+tests/test_voice_service.py::TestVoiceRoutes::test_voice_alerts_page_renders PASSED
 ```
 
 ### Key Verified Behaviors:
@@ -116,4 +133,20 @@ tests/test_risk_engine.py::TestRiskEngine::test_stale_or_missing_data_triggers_s
   - HTTP Test Request: Sent with `Title: [EARLY WARNING] Rapid Temp Rise`, priority `4`, tags `warning,temperature`.
   - HTTP Response: `200 OK`
   - Result: Confirmed live delivery to ntfy cloud infrastructure without any Firebase dependency.
+
+---
+
+## 6. Exotel Outbound Voice Calling Verification
+
+- **Module Under Test:** `services/voice_service.py` & `routes/voice.py`
+- **Unit Test Suite:** 16 tests passing in 2.86s
+- **Verified Capabilities:**
+  1. **Indian Phone Number Normalization:** Successfully maps 10-digit Indian mobiles (`9876543210`), leading-zero (`09876543210`), and `91` prefixes to canonical E.164 (`+919876543210`).
+  2. **Emergency Number Guard:** Strictly rejects and blocks emergency numbers (`100`, `101`, `102`, `108`, `112`, `911`, `999`).
+  3. **Dry-Run Safety Mode:** Simulates provider acceptance with realistic Call SIDs (`dryrun_exo_...`) when unconfigured or in testing mode, avoiding accidental consumption of user trial credits.
+  4. **Cooldown & Incident Deduplication:** Suppresses repetitive outbound dialing within a 300-second window during continuous active fire events.
+  5. **Dynamic ExoML Generation:** Generates valid, sanitized XML speech prompts for Exotel Text-To-Speech telephony flows.
+  6. **Credential Redaction:** Masks API keys and tokens in all responses, logs, and dashboard views.
+  7. **Status Callbacks:** Maps Exotel webhook lifecycle updates (`queued`, `ringing`, `in-progress`, `completed`, `failed`) into SQLite audit log.
+
 

@@ -70,3 +70,16 @@ class Config:
 
     # SQLite Database for Events and Outbox
     DATABASE_PATH = BASE_DIR / "data" / "events.db"
+
+    # Exotel Outbound Voice Alerts (India Telephony)
+    EXOTEL_ACCOUNT_SID = os.environ.get("EXOTEL_ACCOUNT_SID", "").strip()
+    EXOTEL_API_KEY = os.environ.get("EXOTEL_API_KEY", "").strip()
+    EXOTEL_API_TOKEN = os.environ.get("EXOTEL_API_TOKEN", "").strip()
+    EXOTEL_CALLER_ID = os.environ.get("EXOTEL_CALLER_ID", "").strip()
+    EXOTEL_API_BASE_URL = os.environ.get("EXOTEL_API_BASE_URL", "https://api.exotel.com").strip().rstrip("/")
+    EXOTEL_APP_ID = os.environ.get("EXOTEL_APP_ID", "").strip()
+    FIRESHIELD_ALERT_PHONE = os.environ.get("FIRESHIELD_ALERT_PHONE", "").strip()
+    VOICE_ALERT_ENABLED = os.environ.get("VOICE_ALERT_ENABLED", "false").lower() in ("true", "1", "yes")
+    VOICE_ALERT_DRY_RUN = os.environ.get("VOICE_ALERT_DRY_RUN", "true").lower() in ("true", "1", "yes")
+    VOICE_ALERT_COOLDOWN_SECONDS = int(os.environ.get("VOICE_ALERT_COOLDOWN_SECONDS", "300"))
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000").strip().rstrip("/")
