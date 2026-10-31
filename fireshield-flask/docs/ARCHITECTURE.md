@@ -92,8 +92,11 @@ Located in `fireshield-flask/`:
   - Strictly forbids using `field6` alone as ground truth fire labels.
   - Enforces minimum class sample requirements before training supervised classifiers (Logistic Regression, Random Forest).
 - **`services/risk_engine.py`**:
-  - Implements stateful risk evaluation without suppressing hardware fire alarms.
-  - Distinguishes `HARDWARE_FIRE_ALERT`, `EARLY_WARNING` (temperature rise rate >= 1.5°C/min), `BASELINE_ANOMALY` (deviation >= 2.5 sigma from learned baseline), `SENSOR_OR_DATA_FAULT` (stale > 60s or missing), and `NORMAL`.
+  - Implements multi-sensor fusion and false-alarm suppression without altering raw hardware pin reading contracts.
+  - **Single-Sensor Protection:** Detects when only one sensor triggers (e.g. optical flame glitch or dust on smoke DO). If ambient temperature and humidity remain normal, flags `SINGLE_SENSOR_SUSPECT` (suspected false alarm) and withholds outbound phone dialing.
+  - **Dual-Sensor Confirmation:** When both optical Flame (< 600) AND Smoke (DO active) trigger simultaneously, escalates to `DUAL_SENSOR_ALERT` and dispatches high-priority phone calls.
+  - **Three-Sensor Physical Combustion Verification:** Confirms true fire when flame/smoke is verified by rapid temperature rise (+1.5 °C/min) AND combustion drying (relative humidity drop below baseline), classifying as `CONFIRMED_FIRE_ALERT` (confidence >= 90%).
+  - Distinguishes `CONFIRMED_FIRE_ALERT`, `DUAL_SENSOR_ALERT`, `SINGLE_SENSOR_SUSPECT`, `EARLY_WARNING`, `BASELINE_ANOMALY`, `SENSOR_OR_DATA_FAULT`, and `NORMAL`.
   - Hysteresis: requires 3 consecutive normal readings to clear alert state.
 - **`services/event_store.py`**:
   - SQLite persistent storage (`data/events.db`) for hazard event audit log, push subscriptions, and notification outbox with exponential retry backoff.

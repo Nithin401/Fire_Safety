@@ -74,9 +74,21 @@ class AlertService:
         if should_alert and recorded_event:
             event_id = recorded_event.get("event_id", "")
 
-            # 1. High Priority: Automated Outbound Voice Call for Critical Fire Incidents
-            # Never delayed by other channels; executed immediately upon HARDWARE_FIRE_ALERT or fire_status == 1
-            if event_type == RiskState.HARDWARE_FIRE_ALERT or metrics.get("fire_status") == 1 or severity == "CRITICAL":
+            # 1. High Priority: Automated Outbound Voice Call for Confirmed Multi-Sensor Fire Incidents
+            # Phone calls are triggered ONLY when:
+            # - Dual-sensor confirmed (Both Flame + Smoke active), OR
+            # - Multi-sensor physically verified (Flame/Smoke confirmed by Temp Rise + Humidity Drop, confidence >= 70%)
+            # Single-sensor triggers are flagged as SUSPECT FALSE ALARM and NEVER dial the user's phone.
+            is_phone_call_warranted = (
+                eval_res.get("should_phone_call", False)
+                or metrics.get("dual_sensor_confirmed", False)
+                or event_type in (RiskState.CONFIRMED_FIRE_ALERT, RiskState.DUAL_SENSOR_ALERT)
+                or (metrics.get("confidence_score", 0) >= 70)
+            )
+            if event_type == RiskState.SINGLE_SENSOR_SUSPECT or metrics.get("single_sensor_suspect"):
+                is_phone_call_warranted = False
+
+            if is_phone_call_warranted:
                 voice_outbox_id = self.event_store.enqueue_notification(
                     event_id=event_id,
                     channel="voice",

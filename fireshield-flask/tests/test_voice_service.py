@@ -264,8 +264,8 @@ class TestVoiceAlertIntegration:
 
         result = alert_service.evaluate_and_alert(fire_reading)
 
-        # Risk state must be HARDWARE_FIRE_ALERT
-        assert result["state"] == RiskState.HARDWARE_FIRE_ALERT
+        # Risk state must be confirmed fire
+        assert result["state"] in (RiskState.CONFIRMED_FIRE_ALERT, RiskState.DUAL_SENSOR_ALERT, RiskState.HARDWARE_FIRE_ALERT)
         assert result["should_alert"] is True
 
         # Voice call must have been triggered and recorded
@@ -280,6 +280,34 @@ class TestVoiceAlertIntegration:
         assert len(calls) == 1
         assert calls[0]["entry_id"] == 9999
         assert calls[0]["status"] == "accepted"
+
+    def test_single_sensor_trigger_does_not_dispatch_voice_call(self, temp_db, mock_config):
+        mock_config.VOICE_ALERT_DRY_RUN = True
+        voice_service = VoiceService(config=mock_config, event_store=temp_db)
+        alert_service = AlertService(config=mock_config, event_store=temp_db, voice_service=voice_service)
+
+        # Single optical flame reading without smoke, normal temp and humidity
+        single_flame_reading = {
+            "entry_id": 9998,
+            "created_at": "2026-10-28T17:00:00Z",
+            "flame_raw": 420.0,    # Only flame active (<600)
+            "smoke_status": 0,      # Smoke is NOT active
+            "temperature_c": 24.0,  # Normal room temperature
+            "humidity_pct": 52.0,   # Normal room humidity
+            "servo_angle": 90,
+            "fire_status": 1,
+            "is_stale": False,
+        }
+
+        result = alert_service.evaluate_and_alert(single_flame_reading)
+
+        # State must be classified as SINGLE_SENSOR_SUSPECT
+        assert result["state"] == RiskState.SINGLE_SENSOR_SUSPECT
+        assert result["should_alert"] is True
+
+        # Automated voice call must NOT be placed for suspected false alarms
+        assert "voice" not in result["delivery"]
+        assert result["metrics"]["should_phone_call"] is False
 
 
 class TestVoiceRoutes:

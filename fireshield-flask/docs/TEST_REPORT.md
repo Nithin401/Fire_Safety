@@ -10,20 +10,21 @@
 
 | Test Category | Suite / Command | Total Checked | Passed | Failed | Not Run |
 |---|---|---|---|---|---|
-| **Flask Backend Unit Tests** | `pytest tests/ -v` | 52 | 52 | 0 | 0 |
+| **Flask Backend Unit Tests** | `pytest tests/ -v` | 55 | 55 | 0 | 0 |
 | **Baseline Model Training** | `train_baseline.py --csv smart_fire_dataset.csv` | 1 | 1 | 0 | 0 |
 | **Flutter Static Analysis** | `flutter analyze` | 1 | 1 | 0 | 0 |
 | **Flutter Unit & Integration** | `flutter test test/flask_integration_test.dart` | 2 | 2 | 0 | 0 |
 | **Flutter Web Compilation** | `flutter build web --release` | 1 | 1 | 0 | 0 |
 | **Live ntfy Push Delivery** | `POST https://ntfy.sh/fireshield_alerts_3534677` | 1 | 1 (HTTP 200) | 0 | 0 |
-| **Exotel Voice Call Adapter** | `tests/test_voice_service.py` | 16 | 16 | 0 | 0 |
+| **Exotel Voice Call Adapter** | `tests/test_voice_service.py` | 17 | 17 | 0 | 0 |
+| **Multi-Sensor False Alarm Guard** | `tests/test_risk_engine.py` | 11 | 11 | 0 | 0 |
 | **Live ThingSpeak Channel Poller**| `services/poller_service.py` (Channel 3534677) | 1 | 1 | 0 | 0 |
 
 ---
 
-## 2. Flask Automated Test Matrix (52 Passed)
+## 2. Flask Automated Test Matrix (55 Passed)
 
-All 52 unit tests executed in 3.06 seconds via `pytest`:
+All 55 unit tests executed in 3.36 seconds via `pytest`:
 
 ```
 tests/test_api.py::TestApiEndpoints::test_graphs_summary_endpoint PASSED
@@ -50,8 +51,10 @@ tests/test_notifications.py::test_api_events_schema PASSED
 tests/test_notifications.py::test_api_current_risk_schema PASSED
 tests/test_risk_engine.py::test_normal_reading_evaluates_to_normal PASSED
 tests/test_risk_engine.py::test_hardware_fire_priority_with_field6 PASSED
-tests/test_risk_engine.py::test_hardware_fire_priority_with_flame_sensor PASSED
-tests/test_risk_engine.py::test_hardware_fire_priority_with_smoke_sensor PASSED
+tests/test_risk_engine.py::test_single_flame_sensor_identified_as_suspected_false_alarm PASSED
+tests/test_risk_engine.py::test_single_smoke_sensor_identified_as_suspected_false_alarm PASSED
+tests/test_risk_engine.py::test_dual_sensor_activation_triggers_phone_alarm PASSED
+tests/test_risk_engine.py::test_multi_sensor_physical_verification_with_humidity_and_temp PASSED
 tests/test_risk_engine.py::test_baseline_anomaly_environmental_only PASSED
 tests/test_risk_engine.py::test_early_warning_rapid_temp_rise PASSED
 tests/test_risk_engine.py::test_stale_reading_produces_data_fault PASSED
@@ -73,6 +76,7 @@ tests/test_voice_service.py::TestVoiceServiceUnit::test_exotel_timeout_handling 
 tests/test_voice_service.py::TestVoiceServiceUnit::test_webhook_status_callback_updates_call PASSED
 tests/test_voice_service.py::TestVoiceServiceUnit::test_exoml_generation PASSED
 tests/test_voice_service.py::TestVoiceAlertIntegration::test_hardware_fire_reading_triggers_voice_call PASSED
+tests/test_voice_service.py::TestVoiceAlertIntegration::test_single_sensor_trigger_does_not_dispatch_voice_call PASSED
 tests/test_voice_service.py::TestVoiceRoutes::test_get_voice_status_api PASSED
 tests/test_voice_service.py::TestVoiceRoutes::test_test_call_api_dry_run PASSED
 tests/test_voice_service.py::TestVoiceRoutes::test_test_call_prohibits_emergency_number PASSED

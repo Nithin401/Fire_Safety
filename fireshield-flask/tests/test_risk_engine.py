@@ -51,50 +51,102 @@ def test_hardware_fire_priority_with_field6(engine, baseline_fixture):
         "created_at": "2026-10-19T10:00:16Z",
     }
     res = engine.evaluate_reading(reading, baseline=baseline_fixture)
-    assert res["state"] == RiskState.HARDWARE_FIRE_ALERT
+    # Single unverified field6 trigger without dual confirmation or thermal drop flags suspect false alarm
+    assert res["state"] == RiskState.SINGLE_SENSOR_SUSPECT
     assert res["should_alert"] is True
-    assert res["severity"] == "CRITICAL"
+    assert res["should_phone_call"] is False
+    assert res["severity"] == "WARNING"
     assert "field6=1" in res["reason"]
 
 
-def test_hardware_fire_priority_with_flame_sensor(engine, baseline_fixture):
-    # Flame threshold is 600, lower means flame
+def test_single_flame_sensor_identified_as_suspected_false_alarm(engine, baseline_fixture):
+    # Single optical flame without smoke or thermal confirmation is a suspected false alarm
     reading = {
         "entry_id": 102,
-        "temperature_c": 25.0,
-        "humidity_pct": 49.0,
-        "flame_raw": 350.0,  # Below 600!
-        "smoke_status": 0,
+        "temperature_c": 24.0,
+        "humidity_pct": 50.0,
+        "flame_raw": 350.0,  # Below 600
+        "smoke_status": 0,    # Smoke is NOT active
         "fire_status": 0,
         "servo_angle": 30.0,
         "is_stale": False,
         "created_at": "2026-10-19T10:00:32Z",
     }
     res = engine.evaluate_reading(reading, baseline=baseline_fixture)
-    assert res["state"] == RiskState.HARDWARE_FIRE_ALERT
+    assert res["state"] == RiskState.SINGLE_SENSOR_SUSPECT
     assert res["should_alert"] is True
-    assert res["severity"] == "CRITICAL"
-    assert "Optical flame" in res["reason"]
+    assert res["should_phone_call"] is False
+    assert res["severity"] == "WARNING"
+    assert "Suspected False Alarm" in res["reason"]
+    assert "Flame sensor" in res["reason"]
 
 
-def test_hardware_fire_priority_with_smoke_sensor(engine, baseline_fixture):
-    # Smoke active state is 1 (GPIO12 digital LOW)
+def test_single_smoke_sensor_identified_as_suspected_false_alarm(engine, baseline_fixture):
+    # Smoke active without optical flame or thermal confirmation
     reading = {
         "entry_id": 103,
         "temperature_c": 24.0,
-        "humidity_pct": 55.0,
-        "flame_raw": 1024.0,
-        "smoke_status": 1,  # Smoke active!
+        "humidity_pct": 50.0,
+        "flame_raw": 1024.0,  # Flame NOT detected
+        "smoke_status": 1,     # Smoke active
         "fire_status": 0,
         "servo_angle": 90.0,
         "is_stale": False,
         "created_at": "2026-10-19T10:00:48Z",
     }
     res = engine.evaluate_reading(reading, baseline=baseline_fixture)
-    assert res["state"] == RiskState.HARDWARE_FIRE_ALERT
+    assert res["state"] == RiskState.SINGLE_SENSOR_SUSPECT
     assert res["should_alert"] is True
+    assert res["should_phone_call"] is False
+    assert res["severity"] == "WARNING"
+    assert "Suspected False Alarm" in res["reason"]
+    assert "Smoke detector" in res["reason"]
+
+
+def test_dual_sensor_activation_triggers_phone_alarm(engine, baseline_fixture):
+    # Both flame AND smoke active simultaneously!
+    reading = {
+        "entry_id": 104,
+        "temperature_c": 24.0,
+        "humidity_pct": 50.0,
+        "flame_raw": 380.0,  # Flame active!
+        "smoke_status": 1,    # Smoke active!
+        "fire_status": 1,
+        "servo_angle": 90.0,
+        "is_stale": False,
+        "created_at": "2026-10-19T10:01:00Z",
+    }
+    res = engine.evaluate_reading(reading, baseline=baseline_fixture)
+    assert res["state"] in (RiskState.DUAL_SENSOR_ALERT, RiskState.CONFIRMED_FIRE_ALERT)
+    assert res["should_alert"] is True
+    assert res["should_phone_call"] is True
     assert res["severity"] == "CRITICAL"
-    assert "Smoke digital detector" in res["reason"]
+    assert res["metrics"]["dual_sensor_confirmed"] is True
+    assert res["metrics"]["confidence_score"] >= 70
+
+
+def test_multi_sensor_physical_verification_with_humidity_and_temp(engine, baseline_fixture):
+    # Flame + Smoke + Temperature Rise + Combustion Humidity Drop!
+    reading = {
+        "entry_id": 105,
+        "temperature_c": 32.0,  # +8C above baseline (temp rise)
+        "humidity_pct": 28.0,   # Humidity decreased below 30% (combustion drying)
+        "flame_raw": 320.0,     # Flame active
+        "smoke_status": 1,      # Smoke active
+        "fire_status": 1,
+        "servo_angle": 45.0,
+        "is_stale": False,
+        "created_at": "2026-10-19T10:01:16Z",
+    }
+    res = engine.evaluate_reading(reading, baseline=baseline_fixture)
+    assert res["state"] == RiskState.CONFIRMED_FIRE_ALERT
+    assert res["should_alert"] is True
+    assert res["should_phone_call"] is True
+    assert res["severity"] == "CRITICAL"
+    assert res["metrics"]["is_temp_rising"] is True
+    assert res["metrics"]["is_hum_dropping"] is True
+    assert res["metrics"]["confidence_score"] >= 90
+    assert "Confirmed Fire" in res["reason"]
 
 
 def test_baseline_anomaly_environmental_only(engine, baseline_fixture):
@@ -211,7 +263,7 @@ def test_all_clear_transition_after_consecutive_normal_readings(engine, baseline
         "created_at": "2026-10-19T10:00:00Z",
     }
     res_fire = engine.evaluate_reading(fire_reading, baseline=baseline_fixture)
-    assert res_fire["state"] == RiskState.HARDWARE_FIRE_ALERT
+    assert res_fire["state"] in (RiskState.CONFIRMED_FIRE_ALERT, RiskState.DUAL_SENSOR_ALERT, RiskState.HARDWARE_FIRE_ALERT)
 
     # 2. Normal readings arrive: requires 3 consecutive normal
     normal_1 = {

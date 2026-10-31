@@ -33,7 +33,31 @@
 {% endif %}
 
 {% if reading %}
-  {% if reading.fire_status == 1 %}
+  {% if risk_eval and risk_eval.state in ('CONFIRMED_FIRE_ALERT', 'DUAL_SENSOR_ALERT') %}
+    <div class="alert-banner danger">
+      <div>
+        <strong style="font-size: 1.1rem;">🚨 CONFIRMED FIRE ALERT (Multi-Sensor Validated)</strong>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+          {{ risk_eval.reason }}
+          &bull; Multi-Sensor Confidence: <strong>{{ risk_eval.metrics.confidence_score }}%</strong>
+          &bull; Automated Outbound Phone Call: <strong>QUEUED / DISPATCHED</strong>
+        </p>
+      </div>
+      <span class="badge badge-danger">CONFIRMED FIRE</span>
+    </div>
+  {% elif risk_eval and risk_eval.state == 'SINGLE_SENSOR_SUSPECT' %}
+    <div class="alert-banner warning" style="border-left: 4px solid var(--warning); background: rgba(245, 158, 11, 0.1);">
+      <div>
+        <strong style="font-size: 1.05rem; color: #fbbf24;">⚠️ SUSPECTED FALSE ALARM (Single Sensor Triggered)</strong>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem; color: #cbd5e1;">
+          {{ risk_eval.reason }}
+          &bull; Confidence: <strong>{{ risk_eval.metrics.confidence_score }}%</strong>
+          &bull; <em>Phone call is withheld to prevent false alarms until dual sensors or thermal drop confirm combustion.</em>
+        </p>
+      </div>
+      <span class="badge badge-warning">FALSE ALARM HELD</span>
+    </div>
+  {% elif reading.fire_status == 1 %}
     <div class="alert-banner danger">
       <div>
         <strong style="font-size: 1.1rem;">🚨 HARDWARE FIRE RULE TRIGGERED (field6 = 1)</strong>
@@ -60,7 +84,7 @@
       <div>
         <strong>🟢 Live Hardware Normal (field6 = 0)</strong>
         <p style="font-size: 0.85rem; margin-top: 0.25rem;">
-          Hardware fire rule is clear. Telemetry freshness: {{ reading.age_seconds }}s ago.
+          Hardware fire rule is clear. Telemetry freshness: {{ reading.age_seconds }}s ago. Multi-Sensor baseline active.
         </p>
       </div>
       <span class="badge badge-success">ONLINE & FRESH</span>
@@ -171,15 +195,20 @@
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-top: 1rem;">
       
-      <!-- Risk Status Box -->
+      <!-- Multi-Sensor Risk Evaluation & False-Alarm Guard -->
       <div style="background: var(--bg-surface); padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
-        <h4 style="margin-bottom: 0.5rem; font-size: 1rem;">Current Risk State</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <h4 style="font-size: 1rem;">Multi-Sensor Risk Evaluation</h4>
+          <span id="confidence-badge" class="badge badge-info" style="font-size: 0.75rem;">Confidence: --%</span>
+        </div>
         <p id="risk-reason" style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.75rem;">
           Querying risk engine...
         </p>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">
-          <span>Rate of Rise: <strong id="temp-rate" style="color: var(--text);">-- °C/min</strong></span> &bull; 
-          <span>Baseline Dev: <strong id="temp-dev" style="color: var(--text);">-- °C</strong></span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.78rem; margin-bottom: 0.5rem;">
+          <div>Dual-Sensor: <strong id="dual-sensor-status" style="color: var(--text);">--</strong></div>
+          <div>Outbound Call: <strong id="phone-call-status" style="color: var(--text);">--</strong></div>
+          <div>Temp Rise: <strong id="temp-rate" style="color: var(--text);">-- °C/min</strong></div>
+          <div>Combustion Drying: <strong id="humidity-status" style="color: var(--text);">--</strong></div>
         </div>
       </div>
 
@@ -307,27 +336,51 @@ async function updateLiveRisk() {
       const badge = document.getElementById('risk-badge');
       const reason = document.getElementById('risk-reason');
       const rate = document.getElementById('temp-rate');
-      const dev = document.getElementById('temp-dev');
+      const confBadge = document.getElementById('confidence-badge');
+      const dualStatus = document.getElementById('dual-sensor-status');
+      const phoneStatus = document.getElementById('phone-call-status');
+      const humStatus = document.getElementById('humidity-status');
 
       badge.innerText = data.risk_state;
       reason.innerText = data.reason || 'Normal operation';
 
       if (data.metrics) {
-        if (data.metrics.temp_rate_c_min !== null) {
-          rate.innerText = (data.metrics.temp_rate_c_min > 0 ? '+' : '') + data.metrics.temp_rate_c_min.toFixed(2) + ' °C/min';
+        if (confBadge && data.metrics.confidence_score !== undefined) {
+          confBadge.innerText = 'Confidence: ' + data.metrics.confidence_score + '%';
         }
-        if (data.metrics.temp_deviation !== null) {
-          dev.innerText = (data.metrics.temp_deviation > 0 ? '+' : '') + data.metrics.temp_deviation.toFixed(2) + ' °C';
+        if (dualStatus) {
+          dualStatus.innerText = data.metrics.dual_sensor_confirmed ? '🔥 CONFIRMED (2/2)' : (data.metrics.single_sensor_suspect ? '⚠️ Single Only (1/2)' : 'Normal (0/2)');
+          dualStatus.style.color = data.metrics.dual_sensor_confirmed ? 'var(--danger)' : (data.metrics.single_sensor_suspect ? 'var(--warning)' : 'var(--success)');
+        }
+        if (phoneStatus) {
+          phoneStatus.innerText = data.should_phone_call ? '📞 CALL DISPATCHED' : 'WITHHELD (Safe)';
+          phoneStatus.style.color = data.should_phone_call ? 'var(--danger)' : 'var(--text-muted)';
+        }
+        if (humStatus) {
+          humStatus.innerText = data.metrics.is_hum_dropping ? 'Drying Air Active' : 'Normal Moisture';
+          humStatus.style.color = data.metrics.is_hum_dropping ? 'var(--warning)' : 'var(--text-muted)';
+        }
+        if (data.metrics.temp_rate_c_min !== null && rate) {
+          rate.innerText = (data.metrics.temp_rate_c_min > 0 ? '+' : '') + data.metrics.temp_rate_c_min.toFixed(2) + ' °C/min';
         }
       }
 
       // Update badge color
       badge.className = 'badge';
-      if (data.risk_state === 'HARDWARE_FIRE_ALERT') badge.classList.add('badge-danger');
-      else if (data.risk_state === 'EARLY_WARNING') badge.classList.add('badge-warning');
-      else if (data.risk_state === 'BASELINE_ANOMALY') badge.classList.add('badge-info');
-      else if (data.risk_state === 'SENSOR_OR_DATA_FAULT') badge.classList.add('badge-warning');
-      else badge.classList.add('badge-success');
+      if (data.risk_state === 'CONFIRMED_FIRE_ALERT' || data.risk_state === 'DUAL_SENSOR_ALERT' || data.risk_state === 'HARDWARE_FIRE_ALERT') {
+        badge.classList.add('badge-danger');
+      } else if (data.risk_state === 'SINGLE_SENSOR_SUSPECT') {
+        badge.classList.add('badge-warning');
+        badge.innerText = '⚠️ SUSPECTED FALSE ALARM';
+      } else if (data.risk_state === 'EARLY_WARNING') {
+        badge.classList.add('badge-warning');
+      } else if (data.risk_state === 'BASELINE_ANOMALY') {
+        badge.classList.add('badge-info');
+      } else if (data.risk_state === 'SENSOR_OR_DATA_FAULT') {
+        badge.classList.add('badge-warning');
+      } else {
+        badge.classList.add('badge-success');
+      }
     }
   } catch (e) {
     console.error('Failed to fetch risk status', e);

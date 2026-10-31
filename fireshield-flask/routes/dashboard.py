@@ -3,13 +3,14 @@ from __future__ import annotations
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from config import Config
-from services import BaselineService, DataService, ThingSpeakService
+from services import BaselineService, DataService, RiskEngine, ThingSpeakService
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
 ts_service = ThingSpeakService()
 baseline_service = BaselineService()
 data_service = DataService()
+risk_engine = RiskEngine()
 
 
 @dashboard_bp.route("/")
@@ -31,6 +32,11 @@ def overview():
     # Evaluate baseline if available
     baseline = baseline_service.load_baseline()
 
+    # Evaluate multi-sensor risk & false-alarm prevention
+    risk_eval = None
+    if reading:
+        risk_eval = risk_engine.evaluate_reading(reading, baseline=baseline)
+
     return render_template(
         "dashboard.html",
         reading=reading,
@@ -39,6 +45,7 @@ def overview():
         channel_id=Config.THINGSPEAK_CHANNEL_ID,
         error=latest_res.get("error") if latest_res else None,
         baseline=baseline,
+        risk_eval=risk_eval,
         stale_threshold=Config.STALE_THRESHOLD_SECONDS,
     )
 

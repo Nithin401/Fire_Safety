@@ -56,16 +56,23 @@ def main() -> int:
         return 1
 
     temp_base = baseline_result["temperature_baseline"]
-    print("\n=== Room Temperature Baseline Learned ===")
-    print(f"Room:               {baseline_result['room_name']}")
-    print(f"Observations:       {baseline_result['observations']['valid_temperatures']}")
-    print(f"Mean Temperature:   {temp_base['mean']} °C")
-    print(f"Median Temperature: {temp_base['median']} °C")
-    print(f"Std Deviation:      ±{temp_base['std']} °C")
-    print(f"Observed Range:     [{temp_base['min']} °C, {temp_base['max']} °C]")
-    print(f"2-Sigma Normal Band:[{temp_base['normal_band_2sigma'][0]} °C, {temp_base['normal_band_2sigma'][1]} °C]")
-    print(f"Saved Model File:   {BaselineService.BASELINE_MODEL_PATH}")
-    print("\nNote: Baseline variation indicates environmental change, not confirmed fire.")
+    hum_base = baseline_result.get("humidity_baseline", {})
+    print("\n=== Room Multi-Sensor Baseline Learned ===")
+    print(f"Room:                     {baseline_result['room_name']}")
+    print(f"Observations:             {baseline_result['observations']['valid_temperatures']} valid temps, {baseline_result['observations'].get('valid_humidities', 0)} valid humidities")
+    print(f"Mean Temperature:         {temp_base['mean']} °C (±{temp_base['std']} °C)")
+    print(f"Temperature Normal Band:  [{temp_base['normal_band_2sigma'][0]} °C, {temp_base['normal_band_2sigma'][1]} °C]")
+    if hum_base.get("mean") is not None:
+        hum_std = hum_base.get('std', 0.0) or 0.0
+        drying_thresh = max(10.0, round(hum_base['mean'] - 1.5 * hum_std, 1))
+        print(f"Mean Humidity:            {hum_base['mean']} % (±{hum_std} %)")
+        print(f"Humidity Normal Band:     [{hum_base.get('min', 0)} %, {hum_base.get('max', 100)} %]")
+        print(f"Combustion Drying Thresh: < {drying_thresh} % (Fire dries air, confirms combustion)")
+    print(f"Saved Model File:         {BaselineService.BASELINE_MODEL_PATH}")
+    print("\nPhysics Verification Rules:")
+    print("1. Dual-Sensor Confirmation: Both Flame (<600) + Smoke (DO active) must trigger for instant phone alert.")
+    print("2. Single-Sensor Protection: Single detector without confirmation is held as suspected false alarm.")
+    print("3. Multi-Sensor Physics: Combustion confirmed when Temperature rises AND Humidity drops.")
     return 0
 
 

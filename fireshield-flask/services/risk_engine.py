@@ -11,6 +11,9 @@ class RiskState:
     NORMAL = "NORMAL"
     BASELINE_ANOMALY = "BASELINE_ANOMALY"
     EARLY_WARNING = "EARLY_WARNING"
+    SINGLE_SENSOR_SUSPECT = "SINGLE_SENSOR_SUSPECT"
+    DUAL_SENSOR_ALERT = "DUAL_SENSOR_ALERT"
+    CONFIRMED_FIRE_ALERT = "CONFIRMED_FIRE_ALERT"
     HARDWARE_FIRE_ALERT = "HARDWARE_FIRE_ALERT"
     SENSOR_OR_DATA_FAULT = "SENSOR_OR_DATA_FAULT"
 
@@ -102,19 +105,145 @@ class RiskEngine:
         temp_rate_c_min = self._calculate_temp_rise_rate()
 
         # Baseline Deviation
+        # Baseline Deviations (Temperature & Humidity)
         temp_dev = None
+        hum_dev = None
         base_temp_mean = None
         base_hum_mean = None
         is_temp_anomalous = False
+        is_hum_dropping = False
         if active_baseline:
             base_temp_mean = active_baseline.get("temperature_mean")
             base_hum_mean = active_baseline.get("humidity_mean")
             temp_std = active_baseline.get("temperature_std", 1.0)
+            hum_std = active_baseline.get("humidity_std", 5.0)
             if base_temp_mean is not None:
                 temp_dev = float(temp_c) - float(base_temp_mean)
                 if temp_std and temp_std > 0:
                     z_score = abs(temp_dev) / temp_std
                     is_temp_anomalous = z_score >= self.anomaly_sigma_threshold
+            if base_hum_mean is not None:
+                hum_dev = float(hum_pct) - float(base_hum_mean)
+                # Physical combustion signature: relative humidity decreases as fire dries the air
+                if hum_std and hum_std > 0:
+                    is_hum_dropping = hum_dev <= -1.0 * hum_std
+
+        # Absolute dry air check (combustion drying)
+        if not is_hum_dropping and hum_pct < 35.0:
+            is_hum_dropping = True
+
+        is_temp_rising = (
+            (temp_rate_c_min is not None and temp_rate_c_min >= self.temp_rise_threshold)
+            or (temp_dev is not None and temp_dev >= 2.0)
+        )
+
+        # -------------------------------------------------------------
+        # Multi-Sensor State & Confidence Evaluation
+        # -------------------------------------------------------------
+        flame_active = flame_raw is not None and flame_raw < 600
+        smoke_active = smoke_status is not None and smoke_status == 1
+        dual_sensor_active = flame_active and smoke_active
+        single_sensor_active = flame_active != smoke_active
+
+        # Multi-Sensor Confidence Calculation (0 - 100%)
+        # 1. Optical Flame: +35% if < 600, +15% if < 800
+        # 2. Smoke Detector: +35% if active (== 1)
+        # 3. Temperature Rise: +15% if rate-of-rise >= 1.5°C/min or temp elevated
+        # 4. Humidity Decrease: +15% if humidity dropped below normal baseline
+        confidence_score = 0
+        if flame_raw is not None:
+            if flame_raw < 600:
+                confidence_score += 35
+            elif flame_raw < 800:
+                confidence_score += 15
+        if smoke_active:
+            confidence_score += 35
+        if is_temp_rising:
+            confidence_score += 15
+        if is_hum_dropping:
+            confidence_score += 15
+
+        confidence_score = min(100, confidence_score)
+
+        should_phone_call = False
+        fire_state: Optional[str] = None
+        severity: str = "NORMAL"
+        reason_str: str = ""
+
+        # Tier 1: Dual-Sensor Confirmation (Both Flame AND Smoke Active)
+        if dual_sensor_active:
+            should_phone_call = True
+            self.hazard_active = True
+            self.consecutive_normal_readings = 0
+
+            if is_temp_rising or is_hum_dropping:
+                fire_state = RiskState.CONFIRMED_FIRE_ALERT
+                severity = "CRITICAL"
+                self.last_hazard_state = RiskState.CONFIRMED_FIRE_ALERT
+                reasons = [
+                    f"Confirmed Fire: Both Flame ({flame_raw:.0f} < 600) and Smoke detectors active"
+                ]
+                if is_temp_rising:
+                    reasons.append(f"Temperature rising (+{temp_rate_c_min or 0:.2f} °C/min)")
+                if is_hum_dropping:
+                    reasons.append(f"Combustion humidity drop ({hum_pct:.1f}%)")
+                reasons.append(f"Multi-sensor confidence: {confidence_score}%")
+                reason_str = " | ".join(reasons)
+            else:
+                fire_state = RiskState.DUAL_SENSOR_ALERT
+                severity = "CRITICAL"
+                self.last_hazard_state = RiskState.DUAL_SENSOR_ALERT
+                reason_str = (
+                    f"Dual-Sensor Fire Alert: Both Flame ({flame_raw:.0f} < 600) and Smoke detectors active. "
+                    f"Multi-sensor confidence: {confidence_score}%. High priority phone call queued."
+                )
+
+        # Tier 2: Single Sensor Trigger with Physical Verification (Flame OR Smoke + Temp Rise + Humidity Drop)
+        elif single_sensor_active and is_temp_rising and is_hum_dropping:
+            should_phone_call = True
+            self.hazard_active = True
+            self.consecutive_normal_readings = 0
+            fire_state = RiskState.CONFIRMED_FIRE_ALERT
+            severity = "CRITICAL"
+            self.last_hazard_state = RiskState.CONFIRMED_FIRE_ALERT
+            sensor_name = "Flame sensor" if flame_active else "Smoke detector"
+            reason_str = (
+                f"Multi-Sensor Fire: {sensor_name} trigger verified by rapid temperature rise "
+                f"(+{temp_rate_c_min or 0:.2f} °C/min) and combustion humidity drop ({hum_pct:.1f}%). "
+                f"Confidence: {confidence_score}%."
+            )
+
+        # Tier 3: Single Sensor Trigger WITHOUT Physical Verification (SUSPECTED FALSE ALARM)
+        elif single_sensor_active:
+            should_phone_call = False  # DO NOT place phone call for single sensor false alarms
+            self.hazard_active = True
+            self.consecutive_normal_readings = 0
+            fire_state = RiskState.SINGLE_SENSOR_SUSPECT
+            severity = "WARNING"
+            self.last_hazard_state = RiskState.SINGLE_SENSOR_SUSPECT
+            sensor_name = "Flame sensor" if flame_active else "Smoke detector"
+            reason_str = (
+                f"Suspected False Alarm: Single sensor reacting ({sensor_name}) without dual-sensor confirmation. "
+                f"Ambient humidity ({hum_pct:.1f}%) and temperature ({temp_c:.1f} °C) remain within normal bounds. "
+                f"Confidence: {confidence_score}%. Phone call withheld to prevent false alarm."
+            )
+
+        # Tier 4: Hardware Rule Flag (field6 == 1) on legacy/unclassified readings
+        elif fire_status == 1:
+            if is_temp_rising or is_hum_dropping:
+                should_phone_call = True
+                fire_state = RiskState.CONFIRMED_FIRE_ALERT
+                severity = "CRITICAL"
+                reason_str = f"Hardware fire flag (field6=1) verified by combustion temperature/humidity drop. Confidence: {confidence_score}%."
+            else:
+                should_phone_call = False
+                fire_state = RiskState.SINGLE_SENSOR_SUSPECT
+                severity = "WARNING"
+                reason_str = (
+                    f"Hardware rule triggered (field6=1) without dual-sensor confirmation. "
+                    f"Ambient humidity ({hum_pct:.1f}%) and temperature ({temp_c:.1f} °C) are normal. "
+                    f"Suspected false alarm; phone call withheld."
+                )
 
         metrics = {
             "entry_id": entry_id,
@@ -127,35 +256,27 @@ class RiskEngine:
             "baseline_temp_mean": base_temp_mean,
             "baseline_hum_mean": base_hum_mean,
             "temp_deviation": temp_dev,
+            "hum_deviation": hum_dev,
             "temp_rate_c_min": temp_rate_c_min,
             "is_temp_anomalous": is_temp_anomalous,
+            "is_temp_rising": is_temp_rising,
+            "is_hum_dropping": is_hum_dropping,
+            "flame_detected": flame_active,
+            "smoke_detected": smoke_active,
+            "dual_sensor_confirmed": dual_sensor_active,
+            "single_sensor_suspect": single_sensor_active and not (is_temp_rising and is_hum_dropping),
+            "confidence_score": confidence_score,
+            "should_phone_call": should_phone_call,
         }
 
-        # -------------------------------------------------------------
-        # Priority 1: Hardware-Rule Fire Alarm (field6 == 1 or flame/smoke)
-        # -------------------------------------------------------------
-        # Contract: flameDetected when flameValue < 600, smoke detected when digital input is LOW (smoke_status == 1)
-        is_hardware_fire = (fire_status == 1) or (flame_raw < 600) or (smoke_status == 1)
-        if is_hardware_fire:
+        # If any of the above fire states fired, return the evaluation
+        if fire_state:
             self.previous_state = self.current_state
-            self.current_state = RiskState.HARDWARE_FIRE_ALERT
-            self.hazard_active = True
-            self.last_hazard_state = RiskState.HARDWARE_FIRE_ALERT
-            self.consecutive_normal_readings = 0
-            
-            reasons = []
-            if fire_status == 1:
-                reasons.append("ESP8266 hardware rule triggered (field6=1)")
-            if flame_raw < 600:
-                reasons.append(f"Optical flame IR detected ({flame_raw:.0f} < 600 threshold)")
-            if smoke_status == 1:
-                reasons.append("Smoke digital detector active (GPIO12 LOW)")
-            reason_str = " | ".join(reasons)
+            self.current_state = fire_state
 
-            # Hardware fire alerts are NEVER suppressed by cooldowns on state change,
-            # but we avoid repeating duplicate alert in the same minute if unchanged.
+            # Avoid repeat alert spam within 60s if state unchanged
             should_alert = True
-            if self.previous_state == RiskState.HARDWARE_FIRE_ALERT and self.last_hardware_alert_time:
+            if self.previous_state == fire_state and self.last_hardware_alert_time:
                 elapsed = (now_utc - self.last_hardware_alert_time).total_seconds()
                 if elapsed < 60:
                     should_alert = False
@@ -164,10 +285,11 @@ class RiskEngine:
                 self.last_hardware_alert_time = now_utc
 
             return {
-                "state": RiskState.HARDWARE_FIRE_ALERT,
-                "event_type": RiskState.HARDWARE_FIRE_ALERT,
-                "severity": "CRITICAL",
+                "state": fire_state,
+                "event_type": fire_state,
+                "severity": severity,
                 "should_alert": should_alert,
+                "should_phone_call": should_phone_call,
                 "reason": reason_str,
                 "metrics": metrics,
             }

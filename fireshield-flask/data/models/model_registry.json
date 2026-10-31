@@ -244,5 +244,128 @@
       }
     },
     "disclaimer": "Supervised fire classifier is an experimental prototype. It must NEVER suppress or replace the local deterministic hardware alarm."
+  },
+  {
+    "success": true,
+    "model_type": "logistic_regression",
+    "model_file": "model_logistic_regression_20261028_115113.joblib",
+    "trained_at": "2026-10-28T11:51:13.874316+00:00",
+    "features": [
+      "temperature_c",
+      "flame_raw"
+    ],
+    "train_samples": 14,
+    "test_samples": 6,
+    "labels": [
+      "FIRE",
+      "NORMAL"
+    ],
+    "confusion_matrix": [
+      [
+        3,
+        0
+      ],
+      [
+        0,
+        3
+      ]
+    ],
+    "metrics_per_class": {
+      "FIRE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      },
+      "NORMAL": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      }
+    },
+    "disclaimer": "Supervised fire classifier is an experimental prototype. It must NEVER suppress or replace the local deterministic hardware alarm."
+  },
+  {
+    "success": true,
+    "model_type": "logistic_regression",
+    "model_file": "model_logistic_regression_20261028_115334.joblib",
+    "trained_at": "2026-10-28T11:53:34.388507+00:00",
+    "features": [
+      "temperature_c",
+      "flame_raw"
+    ],
+    "train_samples": 14,
+    "test_samples": 6,
+    "labels": [
+      "FIRE",
+      "NORMAL"
+    ],
+    "confusion_matrix": [
+      [
+        3,
+        0
+      ],
+      [
+        0,
+        3
+      ]
+    ],
+    "metrics_per_class": {
+      "FIRE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      },
+      "NORMAL": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      }
+    },
+    "disclaimer": "Supervised fire classifier is an experimental prototype. It must NEVER suppress or replace the local deterministic hardware alarm."
+  },
+  {
+    "success": true,
+    "model_type": "logistic_regression",
+    "model_file": "model_logistic_regression_20261031_105105.joblib",
+    "trained_at": "2026-10-31T10:51:05.129890+00:00",
+    "features": [
+      "temperature_c",
+      "flame_raw"
+    ],
+    "train_samples": 14,
+    "test_samples": 6,
+    "labels": [
+      "FIRE",
+      "NORMAL"
+    ],
+    "confusion_matrix": [
+      [
+        3,
+        0
+      ],
+      [
+        0,
+        3
+      ]
+    ],
+    "metrics_per_class": {
+      "FIRE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      },
+      "NORMAL": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 3
+      }
+    },
+    "disclaimer": "Supervised fire classifier is an experimental prototype. It must NEVER suppress or replace the local deterministic hardware alarm."
   }
 ]
