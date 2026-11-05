@@ -249,6 +249,63 @@
     </div>
   </div>
 
+  <!-- Emergency Voice Calling Control Center -->
+  <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); background: linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--bg-card) 100%);">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="font-size: 1.25rem;">📞</span>
+        <span class="card-title" style="font-size: 1.1rem; font-weight: 700;">Emergency Voice Calling (Telephony)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span id="call-status-badge" class="badge badge-muted" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">Status: IDLE</span>
+        <a href="{{ url_for('voice.voice_alerts_page') }}" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">Full Telephony Log &rarr;</a>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-top: 1rem;">
+      <!-- Emergency Contact Info & Edit -->
+      <div style="background: var(--bg-surface); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <span style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Configured Emergency Contact</span>
+          <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.4rem;">📱</span>
+            <span id="contact-display" style="font-size: 1.15rem; font-weight: 700; color: #fff;">Loading...</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+            This verified recipient receives spoken phone alerts whenever a confirmed fire is detected.
+          </p>
+        </div>
+        <div style="margin-top: 1rem;">
+          <button onclick="promptEditContact()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem; width: 100%;">
+            ✏️ Update Emergency Contact Number
+          </button>
+        </div>
+      </div>
+
+      <!-- Action Controls: Call Now & End Call -->
+      <div style="background: var(--bg-surface); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <span style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Live Call Controls</span>
+          <div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);" id="call-active-details">
+            No call currently active. Press Call Now to initiate an emergency spoken alert.
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem; flex-wrap: wrap;">
+          <button id="btn-call-now" onclick="triggerCallNow()" class="btn btn-danger" style="flex: 1; min-width: 130px; font-weight: 600; padding: 0.6rem 1rem;">
+            🚨 Call Now
+          </button>
+          <button id="btn-end-call" onclick="terminateActiveCall()" class="btn btn-secondary" style="flex: 1; min-width: 130px; font-weight: 600; padding: 0.6rem 1rem;" disabled>
+            ⏹️ End Call
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Telephony Feedback Banner -->
+    <div id="call-feedback-banner" style="display: none; margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem;"></div>
+  </div>
+
   <!-- Persistent Event History Log -->
   <div class="card" style="margin-top: 1.5rem;">
     <div class="card-header">
@@ -484,11 +541,181 @@ async function sendTestAlert(channel) {
   }
 }
 
+// Voice Calling Telephony Controls
+let activeCallId = null;
+
+async function loadVoiceStatus() {
+  try {
+    const res = await fetch('/api/voice/status');
+    const data = await res.json();
+    if (!data.success || !data.config) return;
+
+    const cfg = data.config;
+    const contactEl = document.getElementById('contact-display');
+    const statusBadge = document.getElementById('call-status-badge');
+    const detailsEl = document.getElementById('call-active-details');
+    const endBtn = document.getElementById('btn-end-call');
+
+    contactEl.innerText = cfg.masked_recipient || 'Not Configured';
+
+    if (cfg.active_call) {
+      activeCallId = cfg.active_call.call_id;
+      const statusText = (cfg.active_call.status || 'CONNECTING').toUpperCase();
+      statusBadge.innerText = 'Call: ' + statusText;
+      statusBadge.className = 'badge badge-danger';
+      detailsEl.innerHTML = `📞 <strong style="color: #f87171;">Call in progress (${statusText})</strong> to ${cfg.masked_recipient}. Call ID: <code>${activeCallId}</code>`;
+      endBtn.disabled = false;
+      endBtn.className = 'btn btn-danger';
+    } else if (cfg.in_cooldown) {
+      statusBadge.innerText = 'COOLDOWN (Safe)';
+      statusBadge.className = 'badge badge-warning';
+      detailsEl.innerHTML = `⏳ System is in voice cooldown. Automatic repeated calls are prevented to avoid false alarm annoyance.`;
+      endBtn.disabled = true;
+      endBtn.className = 'btn btn-secondary';
+    } else {
+      activeCallId = null;
+      statusBadge.innerText = 'Status: IDLE';
+      statusBadge.className = 'badge badge-muted';
+      detailsEl.innerHTML = `Ready for emergency alerts. Mode: <strong>${cfg.effective_dry_run ? '🟡 DRY RUN (Safe Simulation)' : '🔵 LIVE EXOTEL'}</strong>.`;
+      endBtn.disabled = true;
+      endBtn.className = 'btn btn-secondary';
+    }
+  } catch (err) {
+    console.error('Failed to fetch voice status:', err);
+  }
+}
+
+async function triggerCallNow() {
+  const banner = document.getElementById('call-feedback-banner');
+  const btn = document.getElementById('btn-call-now');
+
+  if (!confirm("🚨 Trigger an immediate emergency spoken phone alert to the configured emergency contact?")) {
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = "⏳ Dialing...";
+  banner.style.display = "block";
+  banner.style.background = "rgba(59, 130, 246, 0.15)";
+  banner.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+  banner.style.color = "#60a5fa";
+  banner.innerHTML = "Initiating emergency voice call dispatch...";
+
+  try {
+    const res = await fetch('/api/voice/call-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: "Emergency Call Initiated from Dashboard" })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      banner.style.background = "rgba(16, 185, 129, 0.15)";
+      banner.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      banner.style.color = "#34d399";
+      banner.innerHTML = `✅ <strong>Emergency Call Initiated!</strong> Status: <strong>${data.status}</strong> &bull; Call ID: <code>${data.call_id || 'N/A'}</code> &bull; Mode: ${data.is_dry_run ? 'Dry Run' : 'Live'}`;
+      await loadVoiceStatus();
+    } else {
+      banner.style.background = "rgba(239, 68, 68, 0.15)";
+      banner.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+      banner.style.color = "#f87171";
+      banner.innerHTML = `❌ <strong>Call Initiation Failed:</strong> ${data.error || data.message || 'Unknown error'}`;
+    }
+  } catch (err) {
+    banner.style.background = "rgba(239, 68, 68, 0.15)";
+    banner.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+    banner.style.color = "#f87171";
+    banner.innerHTML = `❌ <strong>Network Error:</strong> ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "🚨 Call Now";
+    setTimeout(() => { banner.style.display = "none"; }, 8000);
+  }
+}
+
+async function terminateActiveCall() {
+  const banner = document.getElementById('call-feedback-banner');
+  const btn = document.getElementById('btn-end-call');
+
+  btn.disabled = true;
+  btn.innerText = "⏳ Ending...";
+  banner.style.display = "block";
+  banner.style.background = "rgba(245, 158, 11, 0.15)";
+  banner.style.border = "1px solid rgba(245, 158, 11, 0.4)";
+  banner.style.color = "#fbbf24";
+  banner.innerHTML = "Terminating active voice call...";
+
+  try {
+    const res = await fetch('/api/voice/terminate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call_id: activeCallId })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      banner.style.background = "rgba(16, 185, 129, 0.15)";
+      banner.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      banner.style.color = "#34d399";
+      banner.innerHTML = `✅ <strong>Call Ended:</strong> ${data.message || 'Call terminated successfully.'}`;
+      await loadVoiceStatus();
+    } else {
+      banner.style.color = "#f87171";
+      banner.innerHTML = `⚠️ ${data.error || data.message || 'Could not terminate call.'}`;
+    }
+  } catch (err) {
+    banner.style.color = "#f87171";
+    banner.innerHTML = `❌ Error: ${err.message}`;
+  } finally {
+    setTimeout(() => { banner.style.display = "none"; }, 6000);
+    await loadVoiceStatus();
+  }
+}
+
+async function promptEditContact() {
+  const newPhone = prompt("Enter the emergency contact mobile number (Indian 10-digit or E.164, e.g., 9876543210 or +919876543210):");
+  if (!newPhone) return;
+
+  const banner = document.getElementById('call-feedback-banner');
+  banner.style.display = "block";
+  banner.style.background = "rgba(59, 130, 246, 0.15)";
+  banner.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+  banner.style.color = "#60a5fa";
+  banner.innerHTML = "Saving updated emergency contact number...";
+
+  try {
+    const res = await fetch('/api/voice/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: newPhone })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      banner.style.background = "rgba(16, 185, 129, 0.15)";
+      banner.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      banner.style.color = "#34d399";
+      banner.innerHTML = `✅ <strong>Emergency Contact Saved:</strong> ${data.masked_phone}`;
+      await loadVoiceStatus();
+    } else {
+      banner.style.background = "rgba(239, 68, 68, 0.15)";
+      banner.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+      banner.style.color = "#f87171";
+      banner.innerHTML = `❌ <strong>Failed to update:</strong> ${data.error || 'Invalid number'}`;
+    }
+  } catch (err) {
+    banner.style.color = "#f87171";
+    banner.innerHTML = `❌ Error: ${err.message}`;
+  } finally {
+    setTimeout(() => { banner.style.display = "none"; }, 6000);
+  }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
   updateLiveRisk();
   loadEvents();
+  loadVoiceStatus();
   setInterval(updateLiveRisk, 15000);
+  setInterval(loadVoiceStatus, 8000);
 });
 </script>
 {% endblock %}

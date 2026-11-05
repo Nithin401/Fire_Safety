@@ -4,6 +4,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
 
@@ -40,7 +41,8 @@ class VoiceService:
         self.caller_id = self.config.EXOTEL_CALLER_ID
         self.base_url = self.config.EXOTEL_API_BASE_URL.rstrip("/")
         self.app_id = self.config.EXOTEL_APP_ID
-        self.recipient_phone = self.config.FIRESHIELD_ALERT_PHONE
+        saved_phone = self.event_store.get_state("emergency_contact_phone")
+        self.recipient_phone = saved_phone or self.config.FIRESHIELD_ALERT_PHONE
         self.enabled = self.config.VOICE_ALERT_ENABLED
         self.dry_run = self.config.VOICE_ALERT_DRY_RUN
         self.cooldown_seconds = self.config.VOICE_ALERT_COOLDOWN_SECONDS
@@ -85,6 +87,7 @@ class VoiceService:
             "masked_caller_id": self._mask_phone(caller) if caller else "Not Set",
             "is_ready_for_live": bool(self.enabled and not self.dry_run and self.is_configured()),
             "last_call": self.event_store.get_last_voice_call(),
+            "active_call": self.event_store.get_active_voice_call(),
             "in_cooldown": self.event_store.is_in_voice_cooldown(self.cooldown_seconds),
         }
 
@@ -145,23 +148,100 @@ class VoiceService:
     # -------------------------------------------------------------
 
     def format_alert_message(self, event: Optional[Dict[str, Any]] = None) -> str:
-        """Generate understandable spoken text for TTS."""
+        """Generate understandable spoken text for TTS with location and sensor evidence."""
         if not event:
             return DEFAULT_ALERT_MESSAGE
 
-        details = []
+        parts = [
+            "FireShield AI critical alert. An active fire emergency has been detected for detection node ESP 1 in Living Room."
+        ]
+        flame = event.get("raw_flame")
+        smoke = event.get("raw_smoke")
+        if flame is not None and flame < 600 and smoke == 1:
+            parts.append("Both flame and smoke detectors are triggered.")
+        elif flame is not None and flame < 600:
+            parts.append(f"Optical flame detector triggered with reading {int(flame)}.")
+        elif smoke == 1:
+            parts.append("Smoke detector triggered.")
+
         temp = event.get("temperature_c")
         if temp is not None:
-            details.append(f"Temperature is {float(temp):.1f} degrees Celsius.")
+            parts.append(f"Temperature is {float(temp):.1f} degrees Celsius.")
+
+        hum = event.get("humidity_pct")
+        if hum is not None:
+            parts.append(f"Relative humidity is {float(hum):.1f} percent.")
 
         servo = event.get("servo_angle")
         if servo is not None:
-            details.append(f"Scanner azimuth is {int(servo)} degrees.")
+            parts.append(f"Scanner azimuth is {int(servo)} degrees.")
 
-        extra = " ".join(details)
-        if extra:
-            return f"{DEFAULT_ALERT_MESSAGE} {extra}"
-        return DEFAULT_ALERT_MESSAGE
+        parts.append("Please verify the area safely and take necessary action.")
+        return " ".join(parts)
+
+    def format_sms_message(self, event: Optional[Dict[str, Any]] = None) -> str:
+        """Construct a concise, urgent SMS alert message (< 160 chars)."""
+        temp = event.get("temperature_c") if event else None
+        servo = event.get("servo_angle") if event else None
+        temp_str = f" Temp: {float(temp):.1f}C." if temp is not None else ""
+        servo_str = f" Dir: {int(servo)}deg." if servo is not None else ""
+        return f"🚨 FIRESHIELD CRITICAL: Confirmed fire at Node ESP1 (Living Room).{temp_str}{servo_str} Please inspect safely!"
+
+    def send_emergency_sms(
+        self,
+        event: Dict[str, Any],
+        recipient_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send an emergency SMS text alert via Exotel."""
+        recipient = recipient_override or self.recipient_phone
+        if not recipient or not self.validate_destination_number(recipient):
+            return {"success": False, "error": "Invalid or missing recipient phone number."}
+
+        norm_recipient = self.normalize_phone(recipient)
+        sms_text = self.format_sms_message(event)
+
+        if self.is_dry_run_active():
+            logger.info(f"[SmsAlert] [DRY RUN] Simulating SMS to {self._mask_phone(norm_recipient)}: {sms_text}")
+            return {
+                "success": True,
+                "status": "sent",
+                "is_dry_run": True,
+                "recipient": self._mask_phone(norm_recipient),
+                "message": sms_text,
+            }
+
+        endpoint = f"{self.base_url}/v1/Accounts/{self.account_sid}/Sms/send.json"
+        payload = {
+            "From": self.caller_id,
+            "To": norm_recipient,
+            "Body": sms_text,
+            "EncodingType": "plain",
+        }
+
+        try:
+            logger.info(f"[SmsAlert] Dispatching live Exotel SMS to {self._mask_phone(norm_recipient)}")
+            res = requests.post(
+                endpoint,
+                auth=(self.api_key, self.api_token),
+                data=payload,
+                timeout=10.0,
+            )
+            data = {}
+            try:
+                data = res.json()
+            except Exception:
+                data = {"raw_text": res.text[:120]}
+
+            if res.status_code in (200, 201):
+                logger.info(f"[SmsAlert] SMS dispatched successfully to {self._mask_phone(norm_recipient)}")
+                return {"success": True, "status": "sent", "provider_response": data}
+            else:
+                err = data.get("RestException", {}).get("Message") or f"HTTP {res.status_code}: {res.text[:120]}"
+                logger.error(f"[SmsAlert] Exotel SMS dispatch failed: {err}")
+                return {"success": False, "error": err}
+        except Exception as e:
+            logger.error(f"[SmsAlert] Error sending SMS: {e}")
+            return {"success": False, "error": str(e)}
 
     def get_exoml_response(self, message: Optional[str] = None) -> str:
         """Generate valid ExoML XML for Exotel TTS flow."""
@@ -450,3 +530,182 @@ class VoiceService:
 
         logger.info(f"[VoiceAlert] Webhook received for CallSid {sid}: status -> {mapped_status}")
         return {"success": updated, "call_sid": sid, "mapped_status": mapped_status}
+
+    # -------------------------------------------------------------
+    # Emergency Contact Management
+    # -------------------------------------------------------------
+
+    def update_emergency_contact(self, phone: str) -> Dict[str, Any]:
+        """Validate, normalize, and persist new emergency contact number."""
+        clean = str(phone).strip()
+        if not self.validate_destination_number(clean):
+            return {
+                "success": False,
+                "error": "Invalid destination phone number. Public emergency numbers (100, 101, 112) are prohibited.",
+            }
+
+        norm = self.normalize_phone(clean)
+        self.recipient_phone = norm
+        self.event_store.set_state("emergency_contact_phone", norm)
+
+        # Attempt to update in .env file if it exists
+        try:
+            base_dir = getattr(self.config, "BASE_DIR", None) or Path(__file__).resolve().parent.parent
+            env_file = Path(base_dir) / ".env"
+            if env_file.exists():
+                content = env_file.read_text(encoding="utf-8")
+                if "FIRESHIELD_ALERT_PHONE=" in content:
+                    content = re.sub(r"FIRESHIELD_ALERT_PHONE=.*", f"FIRESHIELD_ALERT_PHONE={norm}", content)
+                else:
+                    content += f"\nFIRESHIELD_ALERT_PHONE={norm}\n"
+                env_file.write_text(content, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not update .env file: {e}")
+
+        logger.info(f"[VoiceAlert] Emergency contact updated to {self._mask_phone(norm)}")
+        return {
+            "success": True,
+            "phone": norm,
+            "masked_phone": self._mask_phone(norm),
+            "message": "Emergency contact number successfully updated.",
+        }
+
+    # -------------------------------------------------------------
+    # Call Termination
+    # -------------------------------------------------------------
+
+    def terminate_call(self, call_id: Optional[str] = None) -> Dict[str, Any]:
+        """Terminate or cancel an ongoing or active voice call."""
+        call_record = None
+        if call_id:
+            call_record = self.event_store.get_voice_call_by_id(call_id)
+        if not call_record:
+            call_record = self.event_store.get_active_voice_call()
+        if not call_record:
+            call_record = self.event_store.get_last_voice_call()
+
+        if not call_record:
+            return {"success": False, "error": "No call record found to terminate."}
+
+        target_call_id = call_record.get("call_id")
+        provider_sid = call_record.get("provider_call_sid")
+        current_status = call_record.get("status")
+
+        if current_status in ("completed", "canceled", "failed", "busy", "no-answer"):
+            return {
+                "success": True,
+                "call_id": target_call_id,
+                "status": current_status,
+                "message": f"Call is already {current_status}.",
+            }
+
+        # Dry Run Mode
+        if self.is_dry_run_active() or call_record.get("is_dry_run"):
+            self.event_store.update_voice_call_status(
+                call_id=target_call_id,
+                status="canceled",
+                error_message="Call ended by user request.",
+            )
+            return {
+                "success": True,
+                "call_id": target_call_id,
+                "status": "canceled",
+                "is_dry_run": True,
+                "message": "Call successfully ended.",
+            }
+
+        # Live Exotel Call Termination
+        endpoint = f"{self.base_url}/v1/Accounts/{self.account_sid}/Calls/{provider_sid}.json"
+        try:
+            res = requests.post(
+                endpoint,
+                auth=(self.api_key, self.api_token),
+                data={"Status": "completed"},
+                timeout=8.0,
+            )
+            self.event_store.update_voice_call_status(
+                call_id=target_call_id,
+                status="canceled",
+                provider_response=res.json() if res.content else {},
+            )
+            return {
+                "success": True,
+                "call_id": target_call_id,
+                "status": "canceled",
+                "is_dry_run": False,
+                "message": "Call termination requested to provider.",
+            }
+        except Exception as e:
+            err = f"Failed to terminate Exotel call: {e}"
+            logger.error(err)
+            self.event_store.update_voice_call_status(
+                call_id=target_call_id,
+                status="canceled",
+                error_message=err,
+            )
+            return {
+                "success": True,
+                "call_id": target_call_id,
+                "status": "canceled",
+                "is_dry_run": False,
+                "message": "Call marked as ended locally.",
+            }
+
+    # -------------------------------------------------------------
+    # Inbound Voice Call Handling
+    # -------------------------------------------------------------
+
+    def handle_incoming_call(
+        self,
+        params: Dict[str, Any],
+        current_hazard: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Handle incoming telephone calls to our virtual number and return spoken status ExoML."""
+        call_sid = params.get("CallSid") or params.get("Sid") or f"inbound_{uuid.uuid4().hex[:8]}"
+        caller = params.get("From", "Unknown")
+
+        hazard = current_hazard
+        if not hazard:
+            recent_events = self.event_store.get_recent_events(limit=1)
+            if recent_events:
+                hazard = recent_events[0]
+
+        event_type = hazard.get("event_type", "NORMAL") if hazard else "NORMAL"
+        temp = hazard.get("temperature_c") if hazard else None
+
+        if event_type in ("CONFIRMED_FIRE_ALERT", "DUAL_SENSOR_ALERT", "HARDWARE_FIRE_ALERT"):
+            spoken = (
+                "Attention. This is the FireShield AI Emergency Status Hotline. "
+                "A critical fire incident is currently in progress at detection node ESP 1 in Living Room. "
+                "Both smoke and optical sensors have triggered. Immediate evacuation or inspection is advised. Goodbye."
+            )
+        elif event_type == "SINGLE_SENSOR_SUSPECT":
+            spoken = (
+                "Welcome to the FireShield AI Status Hotline. "
+                "Detection node ESP 1 in Living Room is active. A single-sensor reading was observed, "
+                "but room temperature and humidity remain stable. No confirmed fire is present. Goodbye."
+            )
+        else:
+            temp_str = f"Room temperature is {float(temp):.1f} degrees Celsius." if temp is not None else "Temperature is normal."
+            spoken = (
+                "Welcome to the FireShield AI Status Hotline. "
+                f"Detection node ESP 1 in Living Room reports all systems normal. {temp_str} "
+                "No smoke or flame detected. Thank you for calling FireShield. Goodbye."
+            )
+
+        try:
+            self.event_store.record_voice_call(
+                call_id=f"in_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}",
+                incident_id="inbound_inquiry",
+                recipient_phone=caller,
+                provider="exotel_inbound",
+                provider_call_sid=call_sid,
+                status="completed",
+                message_text=spoken,
+                is_dry_run=self.is_dry_run_active(),
+                provider_response=params,
+            )
+        except Exception as e:
+            logger.warning(f"Could not record inbound call: {e}")
+
+        return self.get_exoml_response(spoken)

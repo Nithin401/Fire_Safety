@@ -105,6 +105,10 @@ class AlertService:
                         voice_outbox_id, voice_res.get("error") or voice_res.get("message") or "Voice alert not dispatched"
                     )
 
+                # Parallel SMS dispatch via Exotel
+                sms_res = self.voice_service.send_emergency_sms(recorded_event)
+                delivery_results["sms"] = sms_res
+
             # 2. Dispatch via ntfy (Mobile channel)
             ntfy_outbox_id = self.event_store.enqueue_notification(
                 event_id=event_id,

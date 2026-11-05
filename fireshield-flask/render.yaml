@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: fireshield-ai-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: THINGSPEAK_CHANNEL_ID
+        value: 3534677
+      - key: THINGSPEAK_READ_API_KEY
+        value: KGGT6DMKNSCA6FS6
+      # Set these in Render dashboard (never commit secrets to Git):
+      # EXOTEL_ACCOUNT_SID
+      # EXOTEL_API_KEY
+      # EXOTEL_API_TOKEN
+      # EXOTEL_CALLER_ID
+      # EMERGENCY_CONTACT_PHONE

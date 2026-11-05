@@ -134,11 +134,22 @@
     </div>
 
     <div>
-      <button id="triggerTestCallBtn" class="btn" style="background: var(--accent); color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; transition: opacity 0.2s;">
-        📞 Place Test Call Now
-      </button>
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+        <button id="triggerTestCallBtn" class="btn" style="background: var(--accent); color: #fff; border: none; padding: 0.75rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer; flex: 1; transition: opacity 0.2s;">
+          📞 Place Test Call Now
+        </button>
+        <button id="terminateCallBtn" class="btn" style="background: #ef4444; color: #fff; border: none; padding: 0.75rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer; flex: 1; transition: opacity 0.2s;">
+          ⏹️ End Active Call
+        </button>
+      </div>
+      <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 0.5rem;">
+        <input type="text" id="newContactInput" placeholder="New phone number (e.g. 9876543210)" style="flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; color: #fff; font-size: 0.85rem;" />
+        <button id="saveContactBtn" class="btn" style="background: var(--success); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+          Save Contact
+        </button>
+      </div>
       <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 0.5rem;">
-        Requires user confirmation &bull; Bypasses cooldown &bull; Emergency numbers prohibited
+        Incoming calls to Exotel virtual number play spoken safety report via <code>/api/voice/incoming</code>
       </div>
     </div>
   </div>
@@ -282,6 +293,74 @@ document.getElementById('triggerTestCallBtn').addEventListener('click', async fu
     resultBox.innerHTML = `<strong>✗ Network Error:</strong> ${err.message}`;
     btn.disabled = false;
     btn.innerText = "📞 Place Test Call Now";
+  }
+});
+
+document.getElementById('terminateCallBtn').addEventListener('click', async function() {
+  const resultBox = document.getElementById('testResultBox');
+  resultBox.style.display = "block";
+  resultBox.style.background = "rgba(245, 158, 11, 0.15)";
+  resultBox.style.border = "1px solid rgba(245, 158, 11, 0.4)";
+  resultBox.style.color = "#fbbf24";
+  resultBox.innerHTML = "Terminating active call...";
+
+  try {
+    const res = await fetch('/api/voice/terminate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      resultBox.style.background = "rgba(16, 185, 129, 0.15)";
+      resultBox.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      resultBox.style.color = "#34d399";
+      resultBox.innerHTML = `<strong>✓ Call Ended:</strong> ${data.message || 'Call marked as terminated.'}`;
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      resultBox.style.color = "#f87171";
+      resultBox.innerHTML = `⚠️ ${data.error || 'Could not terminate call.'}`;
+    }
+  } catch (err) {
+    resultBox.style.color = "#f87171";
+    resultBox.innerHTML = `❌ Error: ${err.message}`;
+  }
+});
+
+document.getElementById('saveContactBtn').addEventListener('click', async function() {
+  const input = document.getElementById('newContactInput');
+  const val = input.value.trim();
+  if (!val) {
+    alert("Please enter a phone number.");
+    return;
+  }
+  const resultBox = document.getElementById('testResultBox');
+  resultBox.style.display = "block";
+  resultBox.style.background = "rgba(59, 130, 246, 0.15)";
+  resultBox.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+  resultBox.style.color = "#60a5fa";
+  resultBox.innerHTML = "Saving updated emergency contact number...";
+
+  try {
+    const res = await fetch('/api/voice/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: val })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      resultBox.style.background = "rgba(16, 185, 129, 0.15)";
+      resultBox.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+      resultBox.style.color = "#34d399";
+      resultBox.innerHTML = `<strong>✓ Emergency Contact Saved:</strong> ${data.masked_phone}`;
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      resultBox.style.color = "#f87171";
+      resultBox.innerHTML = `❌ ${data.error || 'Invalid phone number.'}`;
+    }
+  } catch (err) {
+    resultBox.style.color = "#f87171";
+    resultBox.innerHTML = `❌ Error: ${err.message}`;
   }
 });
 </script>

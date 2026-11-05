@@ -240,6 +240,42 @@ class TestVoiceServiceUnit:
         assert '<Say voice="female" language="en-IN">Flame detected at kitchen zone.</Say>' in xml
         assert "<Hangup/>" in xml
 
+    def test_emergency_contact_update_and_persistence(self, temp_db, mock_config):
+        service = VoiceService(config=mock_config, event_store=temp_db)
+        res = service.update_emergency_contact("9123456789")
+        assert res["success"] is True
+        assert res["phone"] == "+919123456789"
+        assert service.recipient_phone == "+919123456789"
+        # Test persistence in event store
+        assert temp_db.get_state("emergency_contact_phone") == "+919123456789"
+
+    def test_terminate_call_dry_run(self, temp_db, mock_config):
+        mock_config.VOICE_ALERT_DRY_RUN = True
+        service = VoiceService(config=mock_config, event_store=temp_db)
+        call_res = service.trigger_fire_voice_call({"temperature_c": 40.0})
+        call_id = call_res["call_id"]
+
+        term_res = service.terminate_call(call_id)
+        assert term_res["success"] is True
+        assert term_res["status"] == "canceled"
+        updated = temp_db.get_voice_call_by_id(call_id)
+        assert updated["status"] == "canceled"
+
+    def test_incoming_call_handling_normal_and_emergency(self, temp_db, mock_config):
+        service = VoiceService(config=mock_config, event_store=temp_db)
+
+        # 1. Normal state
+        normal_xml = service.handle_incoming_call({"CallSid": "inc_norm_1", "From": "+919876543210"})
+        assert "reports all systems normal" in normal_xml
+        assert "<Response>" in normal_xml
+
+        # 2. Fire emergency state
+        emergency_xml = service.handle_incoming_call(
+            {"CallSid": "inc_fire_1", "From": "+919876543210"},
+            current_hazard={"event_type": "CONFIRMED_FIRE_ALERT", "temperature_c": 55.0}
+        )
+        assert "critical fire incident is currently in progress" in emergency_xml
+
 
 class TestVoiceAlertIntegration:
     """Integration test: RiskEngine + AlertService hardware fire detection triggers voice call."""
@@ -355,3 +391,42 @@ class TestVoiceRoutes:
         assert res.status_code == 200
         assert b"Automated Outbound Voice Alerts" in res.data
         assert b"Exotel Credentials Checklist" in res.data
+
+    def test_call_now_endpoint(self, client):
+        res = client.post("/api/voice/call-now", json={"reason": "Test Operator Call"})
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["success"] is True
+        assert data["status"] == "accepted"
+        assert data["is_dry_run"] is True
+
+    def test_terminate_call_endpoint(self, client):
+        # Initiate a call first
+        client.post("/api/voice/call-now", json={})
+        res = client.post("/api/voice/terminate", json={})
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["success"] is True
+        assert data["status"] == "canceled"
+
+    def test_incoming_call_webhook(self, client):
+        res = client.post("/api/voice/incoming", data={"CallSid": "exo_in_123", "From": "+919876543210"})
+        assert res.status_code == 200
+        assert res.mimetype == "application/xml"
+        assert b"<Response>" in res.data
+        assert b"FireShield AI" in res.data
+
+    def test_update_contact_endpoint(self, client):
+        res = client.post("/api/voice/contact", json={"phone": "9988776655"})
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["success"] is True
+        assert data["phone"] == "+919988776655"
+        assert "+91****6655" in data["masked_phone"]
+
+    def test_update_contact_rejects_emergency_number(self, client):
+        res = client.post("/api/voice/contact", json={"phone": "100"})
+        assert res.status_code == 400
+        data = res.get_json()
+        assert data["success"] is False
+        assert "prohibited" in data["error"].lower()

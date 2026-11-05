@@ -144,6 +144,26 @@ class EventStore:
             """, (str(entry_id), now_iso))
             conn.commit()
 
+    def get_state(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM system_state WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row:
+                return str(row["value"])
+            return default
+
+    def set_state(self, key: str, value: str) -> None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO system_state (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            """, (key, str(value), now_iso))
+            conn.commit()
+
     # -------------------------------------------------------------
     # Event Management
     # -------------------------------------------------------------
@@ -466,6 +486,20 @@ class EventStore:
     def get_last_voice_call(self) -> Optional[Dict[str, Any]]:
         calls = self.get_recent_voice_calls(limit=1)
         return calls[0] if calls else None
+
+    def get_active_voice_call(self) -> Optional[Dict[str, Any]]:
+        """Return the most recent call that is currently in an active or connecting state."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM voice_calls
+                WHERE status IN ('requested', 'accepted', 'ringing', 'in-progress')
+                ORDER BY id DESC LIMIT 1
+            """)
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_voice_call_dict(row)
+            return None
 
     def is_in_voice_cooldown(self, cooldown_seconds: int = 300) -> bool:
         """Check if any outbound call was initiated within cooldown_seconds."""
